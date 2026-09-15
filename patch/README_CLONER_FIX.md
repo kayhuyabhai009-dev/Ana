@@ -77,11 +77,59 @@ trust a MITM user CA over HTTPS/`wss`, add to `res/xml/network_security_config.x
 </base-config>
 ```
 
+## Part 2 — "disconnect from network, please reconnect" when capture is ON
+
+**Root cause (verified).** With the cloner check fixed, the next blocker when you turn a capture
+proxy (HttpCanary / Charles / Burp) on is TLS **certificate pinning** on the login WebSocket.
+`NetManager.connect` (`project.js:51278`) pins a bundled cert on Android:
+
+```js
+Global.isAndroid() && a
+  ? this._ws = new WebSocket(n + this._address + "/ws", [], cc.url.raw("resources/common/cert.pem"))
+  : this._ws = new WebSocket(n + this._address + "/ws");
+```
+
+When capture is on, the proxy presents its own CA, which does not match the pinned `cert.pem`
+(`assets/res/raw-assets/85/85de80f7-….pem`), so the `wss://` handshake fails → socket error →
+heartbeat times out → "Your network has been disconnected, please reconnect" (`:38890`).
+There is **no explicit proxy/VPN detection** in the DEX — the "proxy" strings are all okhttp
+internals.
+
+**Fix (applied in `project.jsc.patched`).** I decrypted the bundled `assets/src/project.jsc`
+with the recovered XXTEA key, made two text edits, re-gzipped and re-encrypted:
+
+1. **Remove the pin** — the pinned branch is replaced by the unpinned one, keeping `wss://`:
+   `this._ws = new WebSocket(n + this._address + "/ws");`
+   Now the socket uses default trust. With capture off the real cert validates via system CAs;
+   with capture on your MITM CA validates (provided your patcher's `network_security_config`
+   trusts `user` CAs).
+2. **Disable hot-update** (`openUpdate: !0` → `!1`) so the server cannot push the original,
+   still-pinned `project.jsc` over the patched one after launch.
+
+Verified: the new `project.jsc` decrypts + gunzips cleanly and contains the unpinned connect and
+`openUpdate: !1`, with `cert.pem` gone from the connect call.
+
+**`ShareSlots_capturefix_unsigned.apk`** = original APK with BOTH the patched `classes.dex`
+(Part 1) and patched `assets/src/project.jsc` (Part 2), stale signature removed. Sign it with
+your `APKPatcher.jar` / `apksigner` as in Part 1. It boots past the cloner screen **and** stays
+connected while capture is on.
+
+### Trade-off to know
+
+Disabling hot-update means the app will run the bundled script version and will not pull script
+updates from the server. For traffic-analysis this is what you want (it also keeps the pin off);
+just be aware the in-app version string stays at the bundled build.
+
+---
+
 ## What I verified / did not verify
 
 - Verified: the string, the check logic, the hardcoded cert hash, the three code offsets; the
   patched dex re-parses cleanly and disassembles to the intended constants; the re-zipped APK
   contains the patched dex (sha256 match) and no stale signature.
+- Verified (capture fix): the bundled `project.jsc` decrypts with the recovered key, the pinned
+  connect branch and `openUpdate` are edited, and the re-encrypted jsc round-trips (decrypt +
+  gunzip) with `cert.pem` removed and `openUpdate: !1`; the final APK contains it (sha256 match).
 - Not verified: installation on a real device / emulator (none here). This sandbox has no Java,
   apktool, apksigner or a reachable Debian mirror, so I could not build+sign a final APK myself.
   Signing must be done by your tool as above.
