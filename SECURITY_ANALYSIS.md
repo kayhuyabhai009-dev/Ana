@@ -6,9 +6,13 @@
 **minSdk** 21 · **targetSdk** 35 · Cocos Creator 2.x (JS) game
 **Scale:** 544 project script modules · 245 hot-update game packs · 835 scenes
 
-> **Interactive flow map:** [`FLOW.html`](FLOW.html) — 7 tabs covering Refer & Earn, OTP,
-> Withdrawal, Encryption and WebSocket, with all 34 findings indexed by severity. Open it in a
-> browser; it is self-contained with no external dependencies.
+> **📊 Flow map — start here:** [`FLOW.md`](FLOW.md). Mermaid diagrams that GitHub renders
+> natively, so the flows appear when you open the blob URL. Covers Refer & Earn, OTP,
+> Withdrawal, Encryption and WebSocket, with all 34 findings indexed by severity.
+>
+> An interactive HTML version is also available: [`FLOW.html`](FLOW.html) — 7 clickable tabs,
+> self-contained with no external dependencies. GitHub shows `.html` as source, so download it
+> and open it locally.
 >
 > **Companion document:** [`DEEP_ANALYSIS_REFERRAL_ENCRYPTION.md`](DEEP_ANALYSIS_REFERRAL_ENCRYPTION.md)
 > goes considerably deeper on two areas — the referral system and the encryption scheme —

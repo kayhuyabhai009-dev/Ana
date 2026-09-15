@@ -840,6 +840,7 @@ An entire older protocol (`REQ_REFFERS_*`) was abandoned in place and now collid
 
 | File | What it is |
 |---|---|
+| [`FLOW.md`](FLOW.md) | **Flow map that renders on GitHub** — 10 Mermaid diagrams (referral attribution, claim path, share rewards, link hijack, MsgId 1070, OTP send, OTP verify, withdrawal GET, response crypto, WebSocket) + all 34 findings by severity. All 10 blocks verified against the real Mermaid 11.17.2 parser. |
 | [`FLOW.html`](FLOW.html) | Interactive flow map — 7 tabs (Overview / Refer & Earn / OTP / Withdrawal / Encryption / WebSocket / Findings), 34 findings indexed by severity. Self-contained, no external dependencies. |
 | [`harness/attack.js`](harness/attack.js) | Runs the APK's `response-decrypt.js` — **12/12** |
 | [`harness/otp_attack.js`](harness/otp_attack.js) | Runs the APK's `Http.sendReq` — **16/16** |

@@ -260,7 +260,7 @@ other does not. The server must be inferring intent from an optional field.</p>
     <div class="d">Builds <code>remoteres_url + "/fb/win/total/?uid=" + UserManager.uid + ...</code></div>
   </div>
   <div class="step bad">
-    <div class="t">The callback fires regardless of outcome <span class="loc">FBMgr.shareResultCall:18300</span></div>
+    <div class="t">The callback fires regardless of outcome <span class="loc">FBMgr.shareResultCall:18301</span></div>
     <div class="d"><code>if ("1" == result) {…}</code> then
     <code>this._shareEndCall &amp;&amp; this._shareEndCall(e)</code> — <b>outside</b> the
     success branch. A failed share still triggers the reward request.</div>
@@ -621,7 +621,7 @@ srcSum(e,t):  i = 65535
     for any payload ≥ 128 bytes, everything past byte 128 is unchecked.</div>
   </div>
   <div class="step bad">
-    <div class="t">The receive path discards the header without reading it <span class="loc">handleResponeData:51292</span></div>
+    <div class="t">The receive path discards the header without reading it <span class="loc">handleResponeData:51246</span></div>
     <div class="d"><code>new Uint8Array(e.byteLength - 8)</code> copies from offset 8 and
     ignores bytes 0–7 entirely. The length is never compared to the actual payload, the
     <b>checksum is never verified</b>, and the timestamp is never checked.
@@ -696,7 +696,7 @@ const F=[
 ["HIGH","Referral","Agent Telegram/WhatsApp contacts from the server go straight to openURL with no allow-list","yd_rank_referrals · refer_makemoney.onClickWhatsapp"],
 ["HIGH","Referral","MsgId 1070 collides — a task-complete push wipes the referral bonus pool","project.js:79315 vs :79325"],
 ["HIGH","Encryption","Signature canonicalisation is ambiguous — HMAC(data+ts) with no separator","harness test 2"],
-["HIGH","WebSocket","The receive path discards the 8-byte header without verifying the checksum, length or timestamp","handleResponeData:51292"],
+["HIGH","WebSocket","The receive path discards the 8-byte header without verifying the checksum, length or timestamp","handleResponeData:51246"],
 ["HIGH","WebSocket","A host containing a colon falls back to plaintext ws://; cert pinning is Android-only","connect:51276"],
 ["HIGH","Encryption","XXTEA key is a plaintext string in .rodata; re-encryption of all 9 .jsc is byte-exact","0x112cb05"],
 ["HIGH","Auth","Login token is md5(timestamp + \"hero888\") — a hardcoded salt","project.js"],
@@ -705,7 +705,7 @@ const F=[
 ["MED","OTP","The only OTP-send rate limit is a 120 s UI timer","_doSendOtp:61548"],
 ["MED","OTP","OTP-less login sends empty phone and password, resting entirely on a WhatsApp token","project.js:29468"],
 ["MED","Referral","invit_uid is overwritten with a boolean, corrupting attribution for the converting cohort","project.js:30093 vs :29635"],
-["MED","Referral","Share rewards are self-asserted — the callback fires even when the share failed","FBMgr.shareResultCall:18300"],
+["MED","Referral","Share rewards are self-asserted — the callback fires even when the share failed","FBMgr.shareResultCall:18301"],
 ["MED","Referral","referid is a client-chosen user id — potential IDOR if the server does not scope it","refer_myreferrals_item"],
 ["MED","Referral","_showRewads dereferences a null total/today → TypeError","refer_myrewards"],
 ["MED","Referral","NaN pagination reaches the wire as {\"page\":null}","refer_myreferrals:121"],
