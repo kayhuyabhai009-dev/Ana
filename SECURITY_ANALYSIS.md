@@ -6,6 +6,12 @@
 **minSdk** 21 · **targetSdk** 35 · Cocos Creator 2.x (JS) game
 **Scale:** 544 project script modules · 245 hot-update game packs · 835 scenes
 
+> **Companion document:** [`DEEP_ANALYSIS_REFERRAL_ENCRYPTION.md`](DEEP_ANALYSIS_REFERRAL_ENCRYPTION.md)
+> goes considerably deeper on two areas — the referral system and the encryption scheme —
+> and includes a working proof harness (`harness/`) that runs the APK's own
+> `response-decrypt.js` in Node and forges accepted responses. It **corrects one claim
+> below**: the response replay window is unbounded, not 5 minutes.
+
 ---
 
 ## 0. How this analysis was done (and verified)
@@ -141,7 +147,7 @@ s = i === o;                    // non-constant-time compare
 
 `{data:"abc", timestamp:123}` and `{data:"abc1", timestamp:23}` produce the identical signed string. Any HMAC-valid payload can be re-split. Use a canonical encoding (`JSON.stringify({data, timestamp, nonce})`) and a constant-time compare.
 
-**c) No nonce, 5-minute replay window.** `timestampTtl: 300`. A captured response is replayable for 5 minutes — long enough to re-trigger a "withdrawal approved" or "bonus credited" UI state repeatedly.
+**c) No nonce — and the replay window is *unbounded*, not 5 minutes.** `timestampTtl: 300` is set (`project.js:95155`), but **`validateTimestamp` is defined at `project.js:95204` and never called**: `decryptResponse` invokes only `validateSignature` (`:95188`). Verified mechanically — `this.validateTimestamp(` appears 0 times in the module, and the harness replays an identical envelope with no error. A captured response is replayable **forever**. *(This entry was originally written as a 5-minute window; that was incorrect. See `DEEP_ANALYSIS_REFERRAL_ENCRYPTION.md` §B6.)*
 
 **d) Requests are never signed.** Only responses are. There is no request MAC, no anti-replay, and no idempotency key on `draw/*`, `user/balance`, `user/feedback`, or `index/uploadFile`. Auth is just `uid` + `token` as ordinary request parameters (`project.js:80224-80225`).
 

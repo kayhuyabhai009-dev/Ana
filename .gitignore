@@ -1,2 +1,10 @@
-# Reverse-engineering workspace (large extracted APK artifacts, not for Git)
+# decrypted bundles and disassembly workspace (large, regenerable)
 work/
+
+# APK-derived modules inside the harness (regenerate with harness/extract.py)
+harness/response-decrypt.js
+harness/aes-gcm-decrypt.js
+harness/crypto-js.min.js
+harness/crypto-js.js
+harness/tslib.js
+harness/__pycache__/
