@@ -6,5 +6,6 @@ harness/response-decrypt.js
 harness/aes-gcm-decrypt.js
 harness/crypto-js.min.js
 harness/crypto-js.js
+harness/http.js
 harness/tslib.js
 harness/__pycache__/

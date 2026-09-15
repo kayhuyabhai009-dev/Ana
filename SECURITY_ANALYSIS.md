@@ -6,11 +6,16 @@
 **minSdk** 21 · **targetSdk** 35 · Cocos Creator 2.x (JS) game
 **Scale:** 544 project script modules · 245 hot-update game packs · 835 scenes
 
+> **Interactive flow map:** [`FLOW.html`](FLOW.html) — 7 tabs covering Refer & Earn, OTP,
+> Withdrawal, Encryption and WebSocket, with all 34 findings indexed by severity. Open it in a
+> browser; it is self-contained with no external dependencies.
+>
 > **Companion document:** [`DEEP_ANALYSIS_REFERRAL_ENCRYPTION.md`](DEEP_ANALYSIS_REFERRAL_ENCRYPTION.md)
 > goes considerably deeper on two areas — the referral system and the encryption scheme —
 > and includes a working proof harness (`harness/`) that runs the APK's own
-> `response-decrypt.js` in Node and forges accepted responses. It **corrects one claim
-> below**: the response replay window is unbounded, not 5 minutes.
+> `response-decrypt.js` in Node and forges accepted responses. Parts C and D add the OTP and
+> withdrawal analysis. It **corrects one claim below**: the response replay window is
+> unbounded, not 5 minutes.
 
 ---
 

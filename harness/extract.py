@@ -1,13 +1,16 @@
 #!/usr/bin/env python3
-"""Regenerate the four APK-derived modules used by attack.js.
+"""Regenerate the six APK-derived modules used by attack.js / otp_attack.js.
 
 Run from the repo root after decrypting the .jsc bundles:
 
     python3 harness/extract.py work/dec/project.js work/dec/cocos2d-jsb.js
 
-Writes into harness/ (those four files are git-ignored: they are derived from
-the APK, not authored here). loader.js, attack.js, forge.py, tslib.js are
-authored and version-controlled.
+Writes into harness/ (those six files are git-ignored: they are derived from
+the APK, not authored here). loader.js, attack.js, otp_attack.js, forge.py and
+this script are authored and version-controlled.
+
+  crypto-js.min.js  crypto-js.js  aes-gcm-decrypt.js  response-decrypt.js
+  http.js           tslib.js
 """
 import json, re, sys, os
 
@@ -39,10 +42,10 @@ def grab(name):
     while body and body[-1].strip() == '': body.pop()
     return '\n'.join(body) + '\n'
 
-for mod in ['crypto-js.min', 'crypto-js', 'aes-gcm-decrypt', 'response-decrypt']:
-    path = os.path.join(out, mod + '.js')
+for mod in ['crypto-js.min', 'crypto-js', 'aes-gcm-decrypt', 'response-decrypt', 'Http']:
+    path = os.path.join(out, (mod.lower() if mod == 'Http' else mod) + '.js')
     open(path, 'w').write(grab(mod))
-    print(f'  wrote harness/{mod}.js')
+    print(f'  wrote harness/{mod.lower() if mod == "Http" else mod}.js')
 
 # --- 2. pull __awaiter / __generator out of the engine (TS runtime helpers) ---
 eng = open(engine, encoding='utf-8', errors='replace').read()

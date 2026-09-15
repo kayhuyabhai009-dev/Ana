@@ -601,6 +601,222 @@ attack surface with no functionality. They should be stripped from the bundle.
 
 ---
 
+---
+
+# PART C — OTP SEND / VERIFY, AND THE WITHDRAWAL PATH
+
+**New in this pass — also empirically proven.** `harness/otp_attack.js` loads the APK's own
+`Http` module (extracted verbatim, lines 34656–34716) with a stubbed XHR and captures the exact
+URL it builds. **16 / 16 assertions pass.**
+
+## C1. The withdrawal request puts the payment PIN and SMS OTP in a GET URL — Critical
+
+The call chain, verified link by link:
+
+```js
+withdraw_bank.sendDrawReq        (project.js:96953)
+    t = { dcoin, bankid, force?, passwd?, code?, mobile? }   // passwd = payment PIN, code = SMS OTP
+      ↓
+withdraw_bank.sendParam          (project.js:96974)
+    this.sendHttp("draw/order", e, callback)                 // THREE arguments
+      ↓
+charge_api.sendHttp              (project.js:84278)   — withdraw_bank extends charge_api (:96690)
+    var n = arguments.length > 3 && void 0 !== arguments[3] ? arguments[3] : "GET";   // -> "GET"
+      ↓
+UserManager.sendPayServer        (project.js:80210)
+    t.lang = s; t.uid = UserManager.uid; t.token = UserManager.token;   // appended unconditionally
+      ↓
+Http.sendReq                     (project.js:34672)
+    for (var _ in t) h += _ + "=" + t[_];
+    "GET" == o && (u += "?" + encodeURI(h));                 // body sent only for POST
+```
+
+The URL the app actually produces (captured by running its own `sendReq`):
+
+```
+http://pay.example.invalid/v1/draw/order?dcoin=5000&bankid=77&force=1
+   &passwd=482913            <- the payment PIN
+   &code=391042              <- the SMS OTP
+   &mobile=9876543210        <- the phone number
+   &lang=en&uid=10023456
+   &token=a1b2c3d4e5f60718293a4b5c   <- the session token
+```
+
+URL query strings are the single most-logged part of an HTTP request. That PIN, OTP and session
+token land in web-server access logs, load-balancer logs, any proxy or CDN in the path, and the
+`Referer` header of anything the page subsequently loads.
+
+**Scope is wider than withdrawals.** `sendPayServer` defaults to `"GET"` and appends
+`t.uid` + `t.token` (`project.js:80224-80225`) to *every* request, so the session token rides in
+URL query strings across the whole pay API — `user/balance`, `user/banks`, `draw/alltypes`,
+`draw/drawType`, `sms/index`.
+
+**Fix:** POST with a JSON body for anything carrying a credential. Never put a token in a query
+string.
+
+## C2. Every HTTP response body is logged, with no debug gate — High
+
+```js
+// Http.sendReq — the request log IS gated:
+Global.localVersion && console.log("#######request url:" + u + " => " + JSON.stringify(t));
+
+// Http.onReadyStateChanged (project.js:34695) — the response log is NOT:
+if (e.status >= 200 && e.status < 400) {
+    console.log("http res(" + e.responseText.length + "): " + e.responseText);
+```
+
+Harness assertion group 5 confirms the asymmetry by regex against the extracted module. Every
+pay-API and OTP-API response body goes to `console.log` in a production build. With
+`allowBackup="true"` and a USB-debuggable device, `adb logcat` captures all of it.
+
+**If the OTP endpoint ever returns the code in its response body, it lands in logcat in
+cleartext.** I could not determine whether it does without sending traffic to
+`service.fewhu37a1.com`, and I did not — but the client-side `console.log` is unconditional
+either way, so session-bearing bodies from `draw/*` and `user/balance` are logged regardless.
+
+## C3. OTP send is unauthenticated — High
+
+```js
+// registration / login path (_doSendOtp, project.js:61532)
+cc.vv.NetManager.requestHttp("", { phone: e, channel: this._otpType, otptype: 6 },
+    cb, cc.vv.UserManager.parseUrl(Global.otpurl), "GET", !1);
+
+// withdrawal path (withdraw_bank.onClickOTP, project.js:97023)
+this.sendHttp("sms/index", { phone: this.user_mobile, channel: this._otpType, otptype: 4 }, cb);
+```
+
+The request carries **only** `phone`, `channel` and `otptype` — no `uid`, no token, no device id,
+no nonce, no HMAC (harness assertion group 2). Anyone who can reach the endpoint can trigger an
+SMS or a **voice call** (`data.voice` selects the message text) to any number: SMS bombing and
+per-message toll fraud.
+
+The only rate limit is a UI timer:
+```js
+t._optTime = 120;
+t.optLabel.node.getComponent("ReTimer").setReTimer(t._optTime, 1, function () {
+    t.btn_opt.getComponent("ButtonGrayCmp").interactable = !0;   // re-enable after 120 s
+```
+Purely cosmetic. Note also that the registration path (`otptype: 6`) does **not** handle
+`code 339 / send_too_frequently`, while the bind path (`sms/index`) does — suggesting the
+frequency guard may be absent server-side on that endpoint too.
+
+**The phone number itself is in the URL** on both paths, since both are GET.
+
+`Global.Phonecheck = /^\d{10}$/` (`project.js:33739`) *is* applied before these sends, which
+blocks query injection through the phone field here. See C5 for where it is not applied.
+
+## C4. OTP verification — no client-side attempt limit, and a per-reason oracle
+
+```js
+// project.js:30831 — distinct responses per failure reason
+426/216 -> "Registration unavailable now"    335 -> "enter the OTP for new device login"
+334     -> "Invalid OTP code"                333 -> "wrong password!"
+955     -> "This account does not exist!"    201 -> "Phone_used"
+```
+
+I searched all five withdrawal-OTP call sites (`:96965`, `:97505`, `:97927`, `:98307`,
+`:98692`). Each does only:
+```js
+var n = cc.find("input", i).getComponent(cc.EditBox).string;
+if (!n) { cc.vv.FloatTip.show(___("Invalid OTP code")); return; }   // "is the box empty?" — that's all
+t.code = n; t.mobile = this.user_mobile;
+```
+**There is no OTP attempt counter anywhere in the client.** The payment PIN *does* have one
+(`_nErrorCnt >= 3` → force reset), but it lives on the component instance, so navigating away
+clears it. Both limits must be enforced server-side.
+
+**Correctly done, for the record:** the OTP is scrubbed before the login request is cached —
+```js
+if (r.otp) { r.otp = void 0; r.LoginExData = Global.LoginExData.reloginAction; }   // project.js:30709
+Global.saveLocal(Global.SAVE_KEY_REQ_LOGIN, JSON.stringify(r));
+```
+so it does not reach localStorage.
+
+**But note:** for the password-reset flow the *new password* is sent in the same message as the
+OTP — `reqLogin(e, this.pwdStr, Global.LoginType.PHONE, "", "rest", this.optStr)` — over a
+WebSocket that can be plaintext `ws://` (§B/WS).
+
+## C5. `encodeURI` instead of `encodeURIComponent` — parameter injection
+
+```js
+var h = "";
+for (var _ in t) { "" != h && (h += "&"); h += _ + "=" + t[_]; }   // raw & and =
+"GET" == o && (u += "?" + encodeURI(h));                            // encodeURI does NOT escape & = + # ? ; /
+```
+
+Harness assertion group 3 proves a value of `9876543210&otptype=9&admin=1` survives as two extra
+real parameters:
+```
+…/v1/sms/index?phone=9876543210&otptype=9&admin=1&channel=0&otptype=4
+                                  ^^^^^^^^^^^^^^^^^^^^^ injected, parsed as real params
+```
+`Phonecheck` blocks this on the OTP paths. But `onClickBinding` gates its phone check on a
+server-controlled flag —
+`if (Global.Phonecheck && cc.vv.UserManager.bind_req_phone && !Global.Phonecheck.test(e))` —
+so when `bind_req_phone` is false the regex is skipped entirely.
+
+**Fix:** build the query with `URLSearchParams`, or `encodeURIComponent` per component.
+
+## C6. OTP-less login
+
+```js
+cc.vv.PlatformApiMgr.doOTPLessLogin(function (e) {
+    var t = parseInt(e.result);
+    if (1 == t) { var i = e.token;
+        cc.vv.GameManager.reqLogin("", "", Global.LoginType.OTPLESS, i, null, i); }
+```
+Phone and password are **empty strings**; the same WhatsApp-issued token is passed as both
+`accessToken` and `token` (`constructLoginMsg` assigns `s.accessToken = n; s.token = o`). The
+native side is `loginOTPLess()V` → `OTPLessCallback`. Security rests entirely on the server
+validating that token — unverifiable from the client.
+
+---
+
+# PART D — ADDITIONAL REFERRAL FINDINGS
+
+## D1. Referral-link hijack — High
+
+```js
+REFER_LINK_UPDATE: function (e) {
+    if (200 == e.code) {
+        cc.vv.UserManager.sharelink = e.sharelink;      // no validation whatsoever
+```
+`sharelink` is then rendered into a **QR code** (`QRCode.data = cc.vv.UserManager.sharelink`,
+`project.js:88901`), copied to the clipboard, and embedded in every WhatsApp / Facebook /
+Telegram / system share. On the cleartext `http://` API an on-path attacker substitutes their
+own referral link and **every share the victim subsequently makes credits the attacker**.
+
+## D2. Nine dead referral message IDs
+
+An entire older protocol (`REQ_REFFERS_*`) was abandoned in place and now collides with
+`EVENT_FB_INVITE_*` in the definition table:
+
+| id | name | refs |
+|---|---|---|
+| 254 | `REFER_INFO` | 0 |
+| 267 | `REFER_BROADCAST_INFO` | 0 |
+| 255 | `REQ_REFFERS_LIST` | 0 |
+| 256 | `REQ_REFFERS_REWARDS` | 0 |
+| 259 | `REQ_REFFERS_DETAILS` | 0 |
+| 261 | `REQ_REFFERS_LIST_DETAILS` | 0 |
+| 262 | `REQ_REFFERS_REWARDS_DETAILS` | 0 |
+| 430 | `SHARE_WHATSAPP_REPORT` | 0 |
+| 241 | `EVENT_FB_SHARE_SUCCESS` | 0 |
+
+## D3. Further referral defects
+
+| Where | What |
+|---|---|
+| `yd_rank_referrals.EVENT_GET_RANK_INFO` | `for (t = 0; t < e.list.length; t++)` — no null check on `e.list`; the guard is only `200 == e.code && (4 == e.rtype \|\| 6 == e.rtype)` |
+| `yd_rank_referrals` tabs | "This week" (`rtype 4`) and "Yesterday" (`rtype 6`) land in the **same** handler with no way to tell which tab is showing → a late `rtype:4` reply overwrites the Yesterday view |
+| `refer_myrewards` daily gate | `needPopDayTips("ref_myrewards_last")` is written **only** when `e.coin > 0 \|\| e.count > 0` (`:94800`), so a user with no yesterday-rewards re-requests `REF_REWARDS_LASTDAY` on every panel open |
+| `refer_makemoney.onClickCopy` | Shows `copy_successfully` **before** copying, and copies the share *text* rather than the link |
+| `refer_makemoney.onClickSYS` | On non-native falls back to `openURL(sharelink)` — opens the raw link in a browser instead of sharing |
+| `refer_makemoney.onRecvOnTGBindBot` | `e.payload && cc.vv.PlatformApiMgr.openURL(e.payload)` — a second server-controlled, unvalidated `openURL` sink |
+| `PBPopupInvite._checkInviteCnt` | The 3-invites-per-table cap is a localStorage JSON check inside `try/catch` that **fails open** (`var e = !0`). Clearing or corrupting `DATA_INVITE_IN_CHAT` bypasses it; the 100 s cooldown is the same |
+
+---
+
 ## Summary of what changed vs. the first report
 
 | Claim | First report | Corrected |
@@ -613,14 +829,34 @@ attack surface with no functionality. They should be stripped from the bundle.
 | Claim idempotency | not covered | **6 of 6 claim buttons unguarded** (§A4) |
 | Response cache | not covered | **Never invalidated — proven**, 3 touch points only (§A5) |
 | Share rewards | not covered | **Client-self-asserted, fires on failure too** (§A6) |
+| **Withdrawal transport** | not covered | **Payment PIN + SMS OTP + session token sent as GET query params** — proven by running the app's own `Http.sendReq` (§C1) |
+| **OTP send** | not covered | **Unauthenticated GET**, phone in the URL, 120 s UI-only rate limit (§C3) |
+| **Response logging** | not covered | **Every response body `console.log`ged with no debug gate** (§C2) |
+| **OTP brute force** | not covered | **No client-side attempt counter**; per-reason error oracle (§C4) |
+| **Referral-link hijack** | not covered | `sharelink` is server-controlled and feeds the QR code + every share (§D1) |
+| **Dead protocol** | not covered | **9 dead referral MsgIds** from an abandoned `REQ_REFFERS_*` protocol (§D2) |
+
+## Companion artefacts
+
+| File | What it is |
+|---|---|
+| [`FLOW.html`](FLOW.html) | Interactive flow map — 7 tabs (Overview / Refer & Earn / OTP / Withdrawal / Encryption / WebSocket / Findings), 34 findings indexed by severity. Self-contained, no external dependencies. |
+| [`harness/attack.js`](harness/attack.js) | Runs the APK's `response-decrypt.js` — **12/12** |
+| [`harness/otp_attack.js`](harness/otp_attack.js) | Runs the APK's `Http.sendReq` — **16/16** |
+| [`harness/forge.py`](harness/forge.py) | Attacker-side envelope builder (pycryptodome, independent stack) |
+| [`harness/extract.py`](harness/extract.py) | Regenerates the APK-derived modules from the decrypted JS |
 
 ## What I still cannot verify
 
 - Any **server-side** behaviour: whether claims are idempotent, whether `referid` is
-  authorisation-checked (§A4.1), whether the PIN attempt counter is enforced server-side,
-  and whether `payapi` is served as `http` or `https` (it is assigned at login from
-  `this.payapi = t.payapi`).
+  authorisation-checked (§A4.1), whether OTP or PIN attempt counters are enforced server-side,
+  whether `sms/index` rate-limits at all, and whether `payapi` is served as `http` or `https`
+  (it is assigned at login from `this.payapi = t.payapi`).
+- **Whether the OTP endpoint returns the code in its response body.** I did not send traffic to
+  `service.fewhu37a1.com` and did not attempt to. The client-side `console.log` (§C2) is
+  unconditional regardless, so this is worth checking in your own server logs.
+- Whether the WhatsApp OTP-less token (§C6) is validated server-side.
 - Whether the forged-envelope attack succeeds against a **live** server. I proved the client
-  accepts forgeries; I did not send traffic to `ifs.wfvbu98d.com` and did not attempt to.
+  accepts forgeries; I sent no traffic to `ifs.wfvbu98d.com`.
 - Runtime behaviour on a device. Everything here is static analysis plus execution of the
-  extracted modules in Node.
+  extracted modules in Node 22.
