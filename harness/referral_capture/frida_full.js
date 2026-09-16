@@ -130,29 +130,25 @@ Java.perform(function () {
     L('INIT', 'RealWebSocket.send hooked');
   } catch (e) { L('INIT', 'ws-send hook skipped: ' + e); }
 
-  /* ---------- 4. WebSocket IN (concrete WebSocketListener subclasses) ---------- */
-  function hookListeners() {
-    var WSL;
-    try { WSL = Java.use('org.cocos2dx.okhttp3.WebSocketListener'); } catch (e) { return; }
-    Java.enumerateLoadedClasses({
-      onMatch: function (name) {
-        try {
-          var C = Java.use(name);
-          if (!C.class || !WSL.class.isAssignableFrom(C.class)) return;
-          if (name === 'org.cocos2dx.okhttp3.WebSocketListener') return;
-          try { C.onMessage.overload('org.cocos2dx.okhttp3.WebSocket', 'org.cocos2dx.okio.ByteString').implementation =
-            function (ws, b) { L('WS', 'RECV(bin) ' + hex(b.toByteArray())); return this.onMessage(ws, b); }; } catch (e) {}
-          try { C.onMessage.overload('org.cocos2dx.okhttp3.WebSocket', 'java.lang.String').implementation =
-            function (ws, s) { L('WS', 'RECV(str) ' + s); return this.onMessage(ws, s); }; } catch (e) {}
-          L('INIT', 'WS listener hooked: ' + name);
-        } catch (e) {}
-      },
-      onComplete: function () {}
-    });
-  }
-  hookListeners();
-  setTimeout(hookListeners, 4000);   // catch listeners created after startup
-  setTimeout(hookListeners, 12000);
+  /* ---------- 4. WebSocket IN (RealWebSocket.onReadMessage — concrete, guaranteed) ---------- */
+  try {
+    var RWSin = Java.use('org.cocos2dx.okhttp3.internal.ws.RealWebSocket');
+    RWSin.onReadMessage.overload('org.cocos2dx.okio.ByteString').implementation = function (b) {
+      L('WS', 'RECV(bin) ' + hex(b.toByteArray())); return this.onReadMessage(b);
+    };
+    RWSin.onReadMessage.overload('java.lang.String').implementation = function (s) {
+      L('WS', 'RECV(str) ' + s); return this.onReadMessage(s);
+    };
+    L('INIT', 'RealWebSocket.onReadMessage hooked (incoming WS)');
+  } catch (e) { L('INIT', 'ws-recv hook skipped: ' + e); }
+
+  /* ---------- 4b. okhttp call/ws creation (catch-all visibility) ---------- */
+  try {
+    var OC = Java.use('org.cocos2dx.okhttp3.OkHttpClient');
+    OC.newWebSocket.implementation = function (req, l) { L('WS', 'OPEN ' + req.url().toString()); return this.newWebSocket(req, l); };
+    OC.newCall.implementation = function (req) { L('HTTP', 'OKCALL ' + req.method() + ' ' + req.url().toString()); return this.newCall(req); };
+    L('INIT', 'OkHttpClient newWebSocket/newCall hooked');
+  } catch (e) {}
 
   /* ---------- 5. CRYPTO (keys / IV / HMAC / digest) ---------- */
   try {
