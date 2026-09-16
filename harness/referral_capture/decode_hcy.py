@@ -108,6 +108,33 @@ def main():
         print(f"\n== {fr['file']}  c={fr['c']} {fr['name']} ==")
         print(json.dumps(fr["body"], ensure_ascii=False, default=str)[:1500])
 
+    # ---- referral list -> CSV rollup (c=371/373/374/376 carry lists of referees/earnings) ----
+    rows = []
+    LIST_IDS = {371, 372, 373, 374, 376, 267}
+    for fr in frames:
+        if fr["c"] not in LIST_IDS or not isinstance(fr["body"], dict):
+            continue
+        for v in fr["body"].values():
+            if isinstance(v, list) and v and isinstance(v[0], dict):
+                for item in v:
+                    row = {"_c": fr["c"], "_name": fr["name"]}
+                    row.update({k: val for k, val in item.items()
+                                if not isinstance(val, (dict, list))})
+                    rows.append(row)
+    if rows:
+        import csv
+        cols = []
+        for r in rows:
+            for k in r:
+                if k not in cols:
+                    cols.append(k)
+        csvp = os.path.join(root, "referral_data.csv")
+        with open(csvp, "w", newline="") as f:
+            w = csv.DictWriter(f, fieldnames=cols, extrasaction="ignore")
+            w.writeheader()
+            w.writerows(rows)
+        print(f"\nWrote {len(rows)} referral rows -> {csvp}  (cols: {cols})")
+
 
 if __name__ == "__main__":
     main()
