@@ -1,0 +1,745 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ShareSlots — Security Flow Map</title>
+<style>
+:root{
+  --bg:#0b0e14; --panel:#131824; --panel2:#1a2130; --line:#2a3348;
+  --txt:#dce3f0; --dim:#8b98b0; --acc:#4da3ff;
+  --crit:#ff4d5e; --high:#ff9f43; --med:#ffd93d; --ok:#3ddc97; --info:#7aa2f7;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--txt);
+  font:15px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif}
+code,pre,.mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+header{padding:26px 24px 18px;border-bottom:1px solid var(--line);
+  background:linear-gradient(180deg,#111725,#0b0e14)}
+h1{margin:0 0 6px;font-size:23px;letter-spacing:.2px}
+.sub{color:var(--dim);font-size:13.5px}
+.sub b{color:var(--txt);font-weight:600}
+nav{position:sticky;top:0;z-index:20;display:flex;flex-wrap:wrap;gap:6px;
+  padding:10px 18px;background:rgba(11,14,20,.96);backdrop-filter:blur(8px);
+  border-bottom:1px solid var(--line)}
+nav button{background:var(--panel);color:var(--dim);border:1px solid var(--line);
+  padding:7px 13px;border-radius:8px;cursor:pointer;font-size:13.5px;font-weight:600}
+nav button:hover{color:var(--txt);border-color:#3b4864}
+nav button.on{background:var(--acc);color:#04122b;border-color:var(--acc)}
+main{max-width:1180px;margin:0 auto;padding:22px 20px 90px}
+section{display:none}section.on{display:block;animation:f .25s ease}
+@keyframes f{from{opacity:0;transform:translateY(5px)}to{opacity:1;transform:none}}
+h2{font-size:19px;margin:26px 0 10px;padding-bottom:7px;border-bottom:1px solid var(--line)}
+h2:first-child{margin-top:6px}
+h3{font-size:15.5px;margin:20px 0 8px;color:var(--acc)}
+p{margin:9px 0}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:11px;padding:15px 17px;margin:12px 0}
+.flow{display:flex;flex-direction:column;gap:0;margin:14px 0}
+.step{background:var(--panel2);border:1px solid var(--line);border-left:4px solid var(--acc);
+  border-radius:9px;padding:11px 14px;position:relative}
+.step+.step{margin-top:20px}
+.step+.step::before{content:"▼";position:absolute;top:-19px;left:22px;color:#48567a;font-size:11px}
+.step.bad{border-left-color:var(--crit);background:#1d1420}
+.step.warn{border-left-color:var(--high);background:#1e1a14}
+.step.good{border-left-color:var(--ok);background:#12201b}
+.step .t{font-weight:700;font-size:14.5px}
+.step .loc{color:var(--dim);font-size:12px;margin-left:7px;font-weight:500}
+.step .d{color:var(--dim);font-size:13.4px;margin-top:5px}
+pre{background:#0a0d14;border:1px solid var(--line);border-radius:9px;padding:12px 14px;
+  overflow-x:auto;font-size:12.6px;line-height:1.55;margin:10px 0}
+.tag{display:inline-block;font-size:10.5px;font-weight:800;letter-spacing:.6px;
+  padding:2px 7px;border-radius:5px;vertical-align:2px;margin-left:8px}
+.tag.CRIT{background:var(--crit);color:#fff}.tag.HIGH{background:var(--high);color:#241500}
+.tag.MED{background:var(--med);color:#241f00}.tag.INFO{background:var(--info);color:#04122b}
+.tag.OK{background:var(--ok);color:#04241a}
+table{width:100%;border-collapse:collapse;margin:12px 0;font-size:13.3px}
+th,td{text-align:left;padding:8px 10px;border-bottom:1px solid var(--line);vertical-align:top}
+th{color:var(--dim);font-weight:700;font-size:12px;text-transform:uppercase;letter-spacing:.5px}
+tr:hover td{background:#161d2b}
+.k{color:var(--acc);font-weight:600}
+.url{background:#0a0d14;border:1px solid #3a2230;border-radius:8px;padding:11px 13px;
+  font-size:12.4px;overflow-x:auto;white-space:pre;margin:10px 0}
+.hl{background:#5a1626;color:#ffd7dc;padding:1px 4px;border-radius:3px}
+.hl2{background:#4a3410;color:#ffe6b0;padding:1px 4px;border-radius:3px}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(228px,1fr));gap:11px;margin:13px 0}
+.stat{background:var(--panel2);border:1px solid var(--line);border-radius:10px;padding:13px 15px}
+.stat .n{font-size:25px;font-weight:800;line-height:1.2}
+.stat .l{color:var(--dim);font-size:12.4px;margin-top:3px}
+.n.c{color:var(--crit)}.n.h{color:var(--high)}.n.m{color:var(--med)}.n.o{color:var(--ok)}.n.i{color:var(--info)}
+.note{border-left:3px solid var(--info);background:#141b2b;padding:10px 14px;border-radius:0 8px 8px 0;
+  font-size:13.4px;margin:11px 0}
+.warnbox{border-left:3px solid var(--high);background:#1e1a14;padding:10px 14px;border-radius:0 8px 8px 0;
+  font-size:13.4px;margin:11px 0}
+.leg{display:flex;gap:16px;flex-wrap:wrap;font-size:12.4px;color:var(--dim);margin:10px 0}
+.leg span{display:flex;align-items:center;gap:6px}
+.dot{width:10px;height:10px;border-radius:2px;display:inline-block}
+footer{border-top:1px solid var(--line);padding:16px 24px;color:var(--dim);font-size:12.4px}
+a{color:var(--acc)}
+@media(max-width:640px){main{padding:16px 13px 70px}.step .loc{display:block;margin:2px 0 0}}
+</style>
+</head>
+<body>
+
+<header>
+  <h1>ShareSlots — Security Flow Map</h1>
+  <div class="sub">
+    <b>shareslots_YAZGC3JD46R.apk</b> · <span class="mono">com.shareslots.games.fun</span> ·
+    v1.1.7 (117) · MD5 <span class="mono">62aa898d77bd8c9a55d0be4316b56282</span> ·
+    Cocos Creator 2.x · 544 modules / 835 scenes<br>
+    Every claim below is traceable to a line in the decrypted <span class="mono">project.js</span>,
+    or to a passing assertion in <span class="mono">harness/</span>.
+  </div>
+</header>
+
+<nav id="nav">
+  <button data-t="ov" class="on">Overview</button>
+  <button data-t="ref">Refer &amp; Earn</button>
+  <button data-t="otp">OTP Send / Verify</button>
+  <button data-t="wd">Withdrawal</button>
+  <button data-t="enc">Encryption</button>
+  <button data-t="ws">WebSocket</button>
+  <button data-t="f">All Findings</button>
+</nav>
+
+<main>
+
+<!-- ================= OVERVIEW ================= -->
+<section id="ov" class="on">
+<h2>Overview</h2>
+
+<div class="grid">
+  <div class="stat"><div class="n c" id="nc">–</div><div class="l">Critical</div></div>
+  <div class="stat"><div class="n h" id="nh">–</div><div class="l">High</div></div>
+  <div class="stat"><div class="n m" id="nm">–</div><div class="l">Medium</div></div>
+  <div class="stat"><div class="n i" id="ni">–</div><div class="l">Info / verified-good</div></div>
+  <div class="stat"><div class="n o">28/28</div><div class="l">harness assertions passing</div></div>
+</div>
+
+<div class="card">
+<h3 style="margin-top:0">The one-sentence version</h3>
+<p>The cryptography is competently implemented and completely undermined by key management:
+every secret the app relies on — the XXTEA script key, the AES-256-GCM key, the HMAC key, the
+WebSocket salt — is a static string that ships inside the APK. On top of that, three whole
+transports have no integrity protection at all, and the withdrawal path puts the payment PIN
+and SMS OTP in a <b>GET URL query string</b>.</p>
+</div>
+
+<h3>How the analysis was verified</h3>
+<table>
+<tr><th>Layer</th><th>Method</th><th>Result</th></tr>
+<tr><td>Script bundle</td><td>Recover XXTEA key from <span class="mono">.rodata</span>, decrypt all 9 <span class="mono">.jsc</span>, re-encrypt</td><td><span class="tag OK">BYTE-EXACT</span></td></tr>
+<tr><td>Response crypto</td><td>Load the APK's own <span class="mono">response-decrypt.js</span> in Node 22, attack it with pycryptodome</td><td><span class="tag OK">12/12</span></td></tr>
+<tr><td>HTTP transport</td><td>Load the APK's own <span class="mono">Http.sendReq</span>, capture the URL it builds</td><td><span class="tag OK">16/16</span></td></tr>
+<tr><td>Line citations</td><td>Re-checked every <span class="mono">project.js</span> line number and MsgId in the reports</td><td><span class="tag OK">28/28 · 16/16</span></td></tr>
+</table>
+
+<h3>Where the secrets live</h3>
+<pre>GlobalVar (project.js:33716) — obfuscated with a KEYLESS delta chain, 0 bits of protection
+
+  P_K   (HMAC-SHA256)      rbK2RR#PFn7H4vu0!EKaElnWQkOcKU_z
+  P_AK  (AES-256-GCM)      j39qexkacw7gtnzrnnlwuibjnd494xhw
+  apiUrl                   http://ifs.wfvbu98d.com          <- cleartext
+  loginServerAddress       lo.wfvbu98d.com
+  otpurl                   https://service.fewhu37a1.com/sms/dosend
+  WS login salt            hero888
+  XXTEA key (.rodata)      b32a2160-0c63-41   @ 0x112cb05</pre>
+
+<div class="note">
+<b>Why the delta cipher is worth 0 bits.</b> <span class="mono">Global.compile</span> is
+<span class="mono">c[0]=p[0]+len</span>, <span class="mono">c[i]=p[i]+p[i-1]</span>, then
+<span class="mono">escape()</span>. A keyless, invertible, linear running sum — there is no
+secret to brute-force. It protects <span class="mono">SAVE_PLAYER_TOKEN</span>,
+<span class="mono">localtoken</span>, <span class="mono">SAVE_KEY_REQ_LOGIN</span> and
+<span class="mono">phNum</span> in localStorage, and <span class="mono">allowBackup="true"</span>
+means <span class="mono">adb backup</span> retrieves all of it.
+</div>
+
+<h3>Legend used in the flow diagrams</h3>
+<div class="leg">
+  <span><i class="dot" style="background:var(--acc)"></i> normal step</span>
+  <span><i class="dot" style="background:var(--high)"></i> weakness</span>
+  <span><i class="dot" style="background:var(--crit)"></i> exploitable</span>
+  <span><i class="dot" style="background:var(--ok)"></i> correctly implemented</span>
+</div>
+</section>
+
+<!-- ================= REFER ================= -->
+<section id="ref">
+<h2>Refer &amp; Earn — full flow</h2>
+
+<h3>1. Attribution: how an invite is credited</h3>
+<div class="flow">
+  <div class="step bad">
+    <div class="t">Invite code enters the client <span class="loc">project.js:29266</span></div>
+    <div class="d">Web: <code>Global.ItCode = getQueryVariable("itcode")</code> — any value.
+    Native: the Play install-referrer channel string via <code>GetChannelStr()</code>.
+    Both are attacker-supplied; there is no server-issued, signed, single-use invite token
+    anywhere in the client.</div>
+  </div>
+  <div class="step bad">
+    <div class="t">Bind is gated by a corrupted flag <span class="loc">project.js:30356 · 30093</span></div>
+    <div class="d"><code>if (!UserManager.invit_uid) send({c:257, code:e, vid:"-1"})</code> —
+    <code>vid</code> is hardcoded, so the server gets no independent device identity to
+    cross-check.</div>
+  </div>
+  <div class="step bad">
+    <div class="t">The gate is overwritten with a boolean <span class="loc">project.js:30093</span></div>
+    <div class="d"><code>invit_uid = !0</code> replaces the real inviter id set at <code>:29635</code>.
+    Analytics then report <code>ivtuid: true</code> (<code>:24379</code>) — so attribution records
+    <code>true</code> for exactly the cohort that converted. The field is also used as a boolean
+    gate, so a legitimate inviter id of <code>0</code> or <code>""</code> reads as "not invited"
+    and permits re-binding.</div>
+  </div>
+</div>
+
+<h3>2. Earning: the commission model (extracted from <span class="mono">refer_rule</span>)</h3>
+<div class="card">
+<pre>cfg.invite.coin           fixed reward per referral
+cfg.invite.rtype          1 -> reg_actype2    3 -> reg_actype1    else "Registration"
+cfg.invite.prop[0..1]     cash / bonus split
+cfg.recharge[0..2].ratio  tier A / B / C commission on referral deposits
+cfg.bet[0..2].ratio       tier A / B / C commission on referral wager
+cfg.tax[0..2].ratio       tier A / B / C commission on referral rake
+cfg.recharge_needpay      minimum deposit before commission accrues</pre>
+<p style="color:var(--dim);font-size:13.3px;margin-bottom:0">Three tiers × four revenue events,
+each with an independent cash-vs-bonus split. Reward records carry
+<code>action ∈ {1=Registration, 2=Deposit, 3=Bet, 4=Tax}</code>, <code>cash</code>,
+<code>bonus</code>, <code>date</code> (YYYYMMDD), <code>uid</code>. Anyone unpacking the APK
+learns the entire programme's economics.</p>
+</div>
+
+<h3>3. Claiming: where the money is taken</h3>
+<div class="flow">
+  <div class="step warn">
+    <div class="t">Panel opens <span class="loc">refer_myrewards.onEnable</span></div>
+    <div class="d"><code>sendAndCache({c:371})</code>. If a cache entry exists, the
+    <b>stale response is replayed immediately</b> with <code>c_idx=-1</code> before the fresh
+    reply arrives.</div>
+  </div>
+  <div class="step bad">
+    <div class="t">Tap "Claim" <span class="loc">refer_myrewards.onClickClaim</span></div>
+    <div class="d"><code>RedHitManager.setKeyVal("agent_reward",0)</code> then
+    <code>send({c:375})</code>. <b>No debounce, no in-flight flag, button never disabled.</b>
+    <code>Global.onClick</code> is bare <code>a.on("click", i, n)</code>. A
+    <code>Global.delayInteractable(node,0.5)</code> helper exists and is not used.</div>
+  </div>
+  <div class="step good">
+    <div class="t">Response zeroes the local balance <span class="loc">project.js:94790</span></div>
+    <div class="d"><code>this._serverData.cash = 0; this._serverData.bonus = 0;</code> — but only
+    inside <code>if (200 == e.code)</code>. A failed or slow response leaves the old balance on
+    screen and the button enabled.</div>
+  </div>
+</div>
+
+<div class="warnbox">
+<b>The cache is never invalidated — verified.</b> <code>cacheList</code> has exactly three touch
+points in 101,768 lines:
+<code>cacheList: []</code> (:51028), <code>this.cacheList.push(n)</code> (:51515 — the only
+write), and the read at :51535. No TTL, no expiry, no clear, no invalidation on any event.
+<code>cacheIdxList</code> (:51524) grows without bound.
+</div>
+
+<h3>4. Every claim button in the app is unguarded</h3>
+<table>
+<tr><th>Module</th><th>Sends</th><th>Guard</th></tr>
+<tr><td><code>refer_myrewards</code></td><td><code>{c: REF_CLAIM_REWARD}</code></td><td><span class="tag CRIT">none</span></td></tr>
+<tr><td><code>refer_Leadboard_Claim</code></td><td><code>{c: 378, id}</code></td><td><span class="tag CRIT">none</span></td></tr>
+<tr><td><code>yd_rank_Leadboard_Claim</code></td><td><code>{c: 378, id, tag:"claim"}</code></td><td><span class="tag CRIT">none</span></td></tr>
+<tr><td><code>PromoCode_Item</code></td><td><code>{c: PROMO_CODE_USE, id}</code></td><td><span class="tag CRIT">none</span></td></tr>
+<tr><td><code>return_rewards</code></td><td><code>{c: REQ_RETURN_REWARDS_CLAIM}</code></td><td><span class="tag CRIT">none</span></td></tr>
+<tr><td><code>yd_bonus_task</code></td><td><code>{c: EVENT_BIG_TASK_REWARD, taskid}</code></td><td><span class="tag CRIT">none</span></td></tr>
+</table>
+<p style="color:var(--dim);font-size:13.3px">Note the two leaderboard claims send
+<b>different payloads for the same MsgId 378</b> — one includes <code>tag:"claim"</code>, the
+other does not. The server must be inferring intent from an optional field.</p>
+
+<h3>5. Share rewards are self-asserted</h3>
+<div class="flow">
+  <div class="step">
+    <div class="t">Big-win screen offers a share reward <span class="loc">LMSlots_BigWinShare:60194</span></div>
+    <div class="d">Builds <code>remoteres_url + "/fb/win/total/?uid=" + UserManager.uid + ...</code></div>
+  </div>
+  <div class="step bad">
+    <div class="t">The callback fires regardless of outcome <span class="loc">FBMgr.shareResultCall:18301</span></div>
+    <div class="d"><code>if ("1" == result) {…}</code> then
+    <code>this._shareEndCall &amp;&amp; this._shareEndCall(e)</code> — <b>outside</b> the
+    success branch. A failed share still triggers the reward request.</div>
+  </div>
+  <div class="step bad">
+    <div class="t">Reward request has no proof attached <span class="loc">project.js:60197</span></div>
+    <div class="d"><code>send({c:191, gameid, cat})</code> — no share token, no callback id.
+    Over an unauthenticated WebSocket an attacker can just send the frame.</div>
+  </div>
+</div>
+
+<h3>6. Message-ID namespace</h3>
+<div class="grid">
+  <div class="stat"><div class="n h">638</div><div class="l">MsgId names defined</div></div>
+  <div class="stat"><div class="n h">515</div><div class="l">distinct numeric ids</div></div>
+  <div class="stat"><div class="n c">117</div><div class="l">collisions</div></div>
+  <div class="stat"><div class="n c">4</div><div class="l">live collisions</div></div>
+</div>
+<p>Only <b>169</b>, <b>270</b>, <b>273</b> and <b>1070</b> have both names referenced in code.
+<b>1070 is the damaging one</b> — <code>CHANGE_BONUS_LIST</code> and
+<code>TASK_COMPLETE_NOTIFY</code> are both registered (<code>:79315</code>, <code>:79325</code>)
+and <code>handleMsg</code> calls <i>every</i> handler in the bucket, breaking only if one
+returns exactly <code>1</code>. Neither does. So a task-complete push also runs the bonus
+handler, setting <code>UserManager.bonusList = undefined</code> and firing
+<code>BONUS_CHANGE</code> — blanking the referral bonus panel, since <code>bonus</code> is one
+of the two payout buckets.</p>
+
+<h3>7. Nine dead referral message IDs</h3>
+<p>An entire older referral protocol (<code>REQ_REFFERS_*</code>) was abandoned in place and now
+collides with <code>EVENT_FB_INVITE_*</code> in the definition table:</p>
+<pre>REFER_INFO 254 · REFER_BROADCAST_INFO 267 · REQ_REFFERS_LIST 255
+REQ_REFFERS_REWARDS 256 · REQ_REFFERS_DETAILS 259 · REQ_REFFERS_LIST_DETAILS 261
+REQ_REFFERS_REWARDS_DETAILS 262 · SHARE_WHATSAPP_REPORT 430 · EVENT_FB_SHARE_SUCCESS 241</pre>
+
+<h3>8. Other referral defects</h3>
+<table>
+<tr><th>Where</th><th>What</th></tr>
+<tr><td><code>refer_myrewards._showRewads</code></td><td><code>i = _serverData.total || null</code> then <code>i.cash</code> → <b>TypeError</b> if <code>total</code>/<code>today</code> is absent. Both tabs exposed.</td></tr>
+<tr><td><code>refer_myreferrals</code></td><td><code>_servData</code> is never initialised; <code>onClickPageNext</code>, <code>_showPageNum</code>, <code>onListRender</code> dereference it unguarded → crash if tapped before the first response.</td></tr>
+<tr><td><code>refer_myreferrals:121</code></td><td><code>total_page = Math.ceil(total/limit)</code> → <code>NaN</code>. <code>sendReq</code>'s guard <code>t&lt;1 &amp;&amp; (t=1)</code> does <b>not</b> catch NaN (<code>NaN&lt;1</code> is false) → serialises as <code>{"page":null}</code> on the wire.</td></tr>
+<tr><td><code>refer_Leadboard_Claim</code></td><td><code>e.rewards.push({type:1, count:e.addcoin})</code> → <code>count: undefined</code> when the server omits <code>addcoin</code>; also double-counts when the server already returned <code>rewards</code>.</td></tr>
+<tr><td><code>yd_rank_referrals</code></td><td><code>for (t=0; t&lt;e.list.length; t++)</code> with no null check on <code>e.list</code>.</td></tr>
+<tr><td><code>yd_rank_referrals</code></td><td>"This week" and "Yesterday" tabs both land in the same handler (<code>rtype 4 || 6</code>) with no way to tell which is showing → a late <code>rtype:4</code> reply overwrites the Yesterday view.</td></tr>
+<tr><td><code>refer_myrewards</code></td><td>The <code>REF_REWARDS_LASTDAY</code> daily gate is written <b>only</b> when <code>coin&gt;0 || count&gt;0</code> (:94800), so a user with no yesterday-rewards re-requests on every panel open.</td></tr>
+<tr><td><code>common_sharefriends</code></td><td><code>sharer.php?u=%s</code> receives the whole share <b>text</b> instead of the URL → the Facebook post is broken. <code>refer_makemoney</code> does it correctly with <code>?u=&amp;quote=</code>.</td></tr>
+<tr><td><code>refer_makemoney.onClickCopy</code></td><td>Shows "copy_successfully" <b>before</b> copying, and copies the share text rather than the link.</td></tr>
+<tr><td><code>PBPopupInvite._checkInviteCnt</code></td><td>The 3-invite-per-table cap is a localStorage JSON check inside <code>try/catch</code> that <b>fails open</b> (<code>var e=!0</code>). Clearing or corrupting the key bypasses it.</td></tr>
+<tr><td><code>maskNameStr(n,3,3)</code></td><td>Reveals first 3 + last 3 chars — the whole name for ≤6 chars. Shown next to the real <code>uid</code> and avatar in <code>REF_BOARDCAST</code>.</td></tr>
+</table>
+
+<div class="warnbox">
+<b>Referral-link hijack.</b> <code>REFER_LINK_UPDATE</code> does
+<code>UserManager.sharelink = e.sharelink</code> with no validation. That value is rendered into
+a <b>QR code</b> (<code>QRCode.data = sharelink</code>, :88901), copied to the clipboard, and
+embedded in every WhatsApp / Facebook / Telegram share. On the cleartext
+<code>http://</code> API an on-path attacker swaps in their own link and
+<b>every share the victim makes credits the attacker</b>.
+</div>
+
+<div class="warnbox">
+<b>Unvalidated <code>openURL</code> sinks.</b> <code>agentWS</code> / <code>agentTG</code> /
+<code>telegram_img</code> come straight from the <code>EVENT_GET_RANK_INFO</code> response and go
+to <code>PlatformApiMgr.openURL()</code> with no scheme allow-list. So does
+<code>onRecvOnTGBindBot</code>: <code>e.payload &amp;&amp; openURL(e.payload)</code>. In a
+real-money app that is an in-app, pre-trusted phishing entry point.
+</div>
+</section>
+
+<!-- ================= OTP ================= -->
+<section id="otp">
+<h2>OTP — send and verify</h2>
+
+<h3>1. Registration / login OTP</h3>
+<div class="flow">
+  <div class="step good">
+    <div class="t">Phone is validated <span class="loc">project.js:33739</span></div>
+    <div class="d"><code>Global.Phonecheck = /^\d{10}$/</code> is applied before every send, so
+    query injection through the phone field is blocked on these paths.</div>
+  </div>
+  <div class="step bad">
+    <div class="t">OTP send is a GET <span class="loc">_doSendOtp:61532</span></div>
+    <div class="d"><code>requestHttp("", {phone, channel, otptype:6}, cb, parseUrl(Global.otpurl), "GET", !1)</code>
+    — the phone number becomes a <b>URL query parameter</b> on
+    <code>https://service.fewhu37a1.com/sms/dosend</code>.</div>
+  </div>
+  <div class="step bad">
+    <div class="t">No identity is attached <span class="loc">verified in harness</span></div>
+    <div class="d">The request carries only <code>phone</code>, <code>channel</code>,
+    <code>otptype</code>. No uid, no token, no device id, no nonce, no HMAC — so
+    <b>anyone can trigger an SMS or voice call to any number</b>. SMS bombing and per-message
+    toll fraud.</div>
+  </div>
+  <div class="step bad">
+    <div class="t">The rate limit is a UI timer <span class="loc">61547</span></div>
+    <div class="d"><code>_optTime = 120</code> drives a <code>ReTimer</code> and
+    <code>btn_opt.interactable = false</code>. Purely cosmetic — calling the endpoint directly
+    ignores it. Note the registration path (<code>otptype:6</code>) does not even handle
+    <code>code 339 / send_too_frequently</code>, while the bind path (<code>sms/index</code>) does.</div>
+  </div>
+  <div class="step">
+    <div class="t">OTP is returned to the user, not the client</div>
+    <div class="d">The response body carries <code>data.voice</code> to choose the message text.
+    Whether it also echoes the code is a <b>server-side question I could not test</b> — see the
+    logging finding below for why it matters.</div>
+  </div>
+</div>
+
+<h3>2. Verification</h3>
+<div class="flow">
+  <div class="step warn">
+    <div class="t">OTP travels in the login message <span class="loc">reqLogin:30694</span></div>
+    <div class="d"><code>r.otp = o</code> for <code>reset</code>, <code>otp</code> and
+    <code>mb_reg</code> flows. For password reset the <b>new password is sent in the same
+    message</b>: <code>reqLogin(phone, pwdStr, LoginType.PHONE, "", "rest", optStr)</code>.</div>
+  </div>
+  <div class="step good">
+    <div class="t">OTP is scrubbed before the request is cached <span class="loc">project.js:30709</span></div>
+    <div class="d"><code>if (r.otp) { r.otp = void 0; … }</code> runs before
+    <code>saveLocal(SAVE_KEY_REQ_LOGIN, JSON.stringify(r))</code>. Correctly done.</div>
+  </div>
+  <div class="step bad">
+    <div class="t">The wrong-OTP reply is a brute-force oracle <span class="loc">project.js:30831</span></div>
+    <div class="d"><code>spcode 334 → "Invalid OTP code"</code>, and <code>333 → "wrong
+    password"</code>, <code>955 → "account does not exist"</code>,
+    <code>201 → "Phone_used"</code> — distinct responses per failure reason. There is
+    <b>no client-side attempt counter for the OTP anywhere</b>; every limit must be enforced
+    server-side.</div>
+  </div>
+</div>
+
+<h3>3. The finding that makes OTP leakage concrete</h3>
+<div class="flow">
+  <div class="step bad">
+    <div class="t">Every HTTP response body is logged, with no gate <span class="loc">Http.onReadyStateChanged:34695</span></div>
+    <div class="d"><code>console.log("http res(" + e.responseText.length + "): " + e.responseText)</code>
+    — <b>not</b> behind <code>Global.localVersion</code>, not behind any debug flag. The request
+    URL log one line above <i>is</i> gated; the response log is not.</div>
+  </div>
+</div>
+<pre>// the gated one:
+Global.localVersion &amp;&amp; console.log("#######request url:" + u + " =&gt; " + JSON.stringify(t));
+
+// the ungated one — runs in production on every response:
+if (e.status &gt;= 200 &amp;&amp; e.status &lt; 400) {
+    console.log("http res(" + e.responseText.length + "): " + e.responseText);</pre>
+<p>With <code>allowBackup="true"</code> and a USB-debuggable device, <code>adb logcat</code>
+captures every pay-API and OTP-API response body. <b>If the OTP endpoint ever returns the code
+in its response, it lands in logcat in cleartext.</b> Even if it does not, session-bearing
+response bodies from <code>draw/*</code> and <code>user/balance</code> are logged the same way.</p>
+
+<h3>4. OTP-less login</h3>
+<div class="flow">
+  <div class="step warn">
+    <div class="t">WhatsApp token used as the whole credential <span class="loc">project.js:29468</span></div>
+    <div class="d"><code>PlatformApiMgr.doOTPLessLogin(cb)</code> → native
+    <code>loginOTPLess()V</code> → <code>{result, token}</code> →
+    <code>reqLogin("", "", LoginType.OTPLESS, token, null, token)</code>. Phone and password are
+    <b>empty strings</b>; the same token is passed as both <code>accessToken</code> and
+    <code>token</code>. Auth rests entirely on the server validating that token.</div>
+  </div>
+</div>
+
+<h3>5. Proven with the app's own code</h3>
+<p><code>harness/otp_attack.js</code> loads the APK's real <span class="mono">Http</span> module
+with a stubbed XHR and captures what it actually builds — <b>16/16 assertions pass</b>:</p>
+<div class="url">http://pay.example.invalid/v1/sms/index?<span class="hl2">phone=9876543210</span>&amp;channel=0&amp;otptype=4&amp;lang=en&amp;uid=10023456&amp;<span class="hl">token=a1b2c3d4e5f60718293a4b5c</span></div>
+
+<div class="note">
+<b>And <code>encodeURI</code> is used, not <code>encodeURIComponent</code>.</b>
+<code>sendReq</code> builds the query with raw <code>&amp;</code> and <code>=</code>, then applies
+<code>encodeURI</code>, which does <b>not</b> escape <code>&amp; = + # ? ; /</code>. The harness
+proves a value of <code>9876543210&amp;otptype=9&amp;admin=1</code> survives as two extra real
+parameters. <code>Phonecheck</code> blocks this on the OTP paths — but any caller that skips it
+(including <code>onClickBinding</code>, whose phone check is conditional on
+<code>UserManager.bind_req_phone</code>) is injectable.
+</div>
+</section>
+
+<!-- ================= WITHDRAWAL ================= -->
+<section id="wd">
+<h2>Withdrawal — the most serious finding</h2>
+
+<div class="flow">
+  <div class="step">
+    <div class="t">User taps "Withdraw" <span class="loc">withdraw_bank.drawnow</span></div>
+    <div class="d">Validates the selected account and maintenance window, then calls
+    <code>sendDrawReq(bankid)</code>.</div>
+  </div>
+  <div class="step">
+    <div class="t">The request object is assembled <span class="loc">withdraw_bank.sendDrawReq:96953</span></div>
+    <div class="d"><code>{dcoin, bankid, force?, passwd?, code?, mobile?}</code> —
+    <code>passwd</code> is the payment PIN, <code>code</code> is the SMS OTP.</div>
+  </div>
+  <div class="step bad">
+    <div class="t">It is sent with three arguments <span class="loc">withdraw_bank.sendParam:96974</span></div>
+    <div class="d"><code>this.sendHttp("draw/order", e, callback)</code> — the 4th parameter is
+    omitted.</div>
+  </div>
+  <div class="step bad">
+    <div class="t">The inherited default is GET <span class="loc">charge_api.sendHttp:84278</span></div>
+    <div class="d"><code>withdraw_bank extends charge_api</code>.
+    <code>var n = arguments.length &gt; 3 &amp;&amp; … ? arguments[3] : "GET"</code> →
+    <b>"GET"</b>.</div>
+  </div>
+  <div class="step bad">
+    <div class="t">GET puts everything in the query string <span class="loc">Http.sendReq:34672</span></div>
+    <div class="d"><code>"GET" == o &amp;&amp; (u += "?" + encodeURI(h))</code>, and the body is
+    only sent for POST.</div>
+  </div>
+</div>
+
+<h3>The actual URL the app builds</h3>
+<div class="url">http://pay.example.invalid/v1/draw/order?dcoin=5000&amp;bankid=77&amp;force=1&amp;<span class="hl">passwd=482913</span>&amp;<span class="hl">code=391042</span>&amp;<span class="hl2">mobile=9876543210</span>&amp;lang=en&amp;uid=10023456&amp;<span class="hl">token=a1b2c3d4e5f60718293a4b5c</span></div>
+<p style="color:var(--dim);font-size:13.3px">Produced by running the APK's own
+<code>Http.sendReq</code> — see <code>harness/otp_attack.js</code>, assertion group 1.</p>
+
+<table>
+<tr><th>Secret</th><th>Where it ends up</th></tr>
+<tr><td><b>Payment PIN</b></td><td>Web server access logs, load-balancer logs, any proxy or CDN in the path, and the <code>Referer</code> header of anything the page subsequently loads</td></tr>
+<tr><td><b>SMS OTP</b></td><td>same</td></tr>
+<tr><td><b>Session token</b></td><td>same — and it is appended to <i>every</i> <code>sendPayServer</code> GET, not just withdrawals</td></tr>
+<tr><td><b>Phone number</b></td><td>same</td></tr>
+</table>
+
+<div class="warnbox">
+This is compounded by <code>sendPayServer</code> defaulting to <b>GET</b> and unconditionally
+appending <code>t.uid</code> and <code>t.token</code> (<code>project.js:80224-80225</code>). So
+the session token rides in URL query strings across the whole pay API — balance, bank list,
+withdrawal — and URL query strings are the single most-logged part of an HTTP request.
+</div>
+
+<h3>OTP and PIN attempt limits</h3>
+<table>
+<tr><th>Credential</th><th>Client-side limit</th><th>Note</th></tr>
+<tr><td>Payment PIN</td><td><code>_nErrorCnt &gt;= 3</code> → force reset</td><td>Lives on the component instance, so navigating away resets it. Server must enforce.</td></tr>
+<tr><td><b>SMS OTP</b></td><td><span class="tag CRIT">none</span></td><td>The only check is <code>if (!n)</code> — "is the box empty". Five separate call sites, none with a counter.</td></tr>
+<tr><td>OTP resend</td><td><code>_optTime = 120</code> UI timer</td><td>Bypassable by calling the endpoint directly.</td></tr>
+</table>
+
+<h3>Is the transport even encrypted?</h3>
+<p><code>payapi</code> is assigned at login from the server response
+(<code>this.payapi = t.payapi</code>), so the scheme is server-decided. The manifest sets
+<code>usesCleartextTraffic="true"</code> and <code>res/8G.xml</code> sets a base-config cleartext
+policy for <b>all</b> domains — so <code>http://</code> is permitted. If <code>payapi</code> is
+ever served over <code>http</code>, the PIN and OTP above are on the wire in cleartext as well as
+in the logs.</p>
+</section>
+
+<!-- ================= ENCRYPTION ================= -->
+<section id="enc">
+<h2>Encryption</h2>
+
+<h3>The three layers</h3>
+<table>
+<tr><th>Layer</th><th>Scheme</th><th>Key material</th><th>Effective strength</th></tr>
+<tr><td>Script protection</td><td>XXTEA → gzip</td><td><code>b32a2160-0c63-41</code> in <code>.rodata</code></td><td><span class="tag CRIT">0 bits</span></td></tr>
+<tr><td>Config / localStorage</td><td>delta chain + <code>escape()</code></td><td>none</td><td><span class="tag CRIT">0 bits</span></td></tr>
+<tr><td>HTTP response</td><td>AES-256-GCM + HMAC-SHA256</td><td>two static 32-byte strings in the APK</td><td><span class="tag CRIT">0 bits</span></td></tr>
+<tr><td>WebSocket</td><td>—</td><td>—</td><td><span class="tag CRIT">none</span></td></tr>
+<tr><td>Payment PIN</td><td>—</td><td>—</td><td><span class="tag CRIT">none</span></td></tr>
+</table>
+
+<h3>The response envelope</h3>
+<pre>{
+  "data":      base64( IV[12] || ciphertext[N] || GCM_tag[16] ),
+  "timestamp": &lt;unix seconds&gt;,
+  "signature": hex( HMAC-SHA256( data_string + str(timestamp), P_K ) )
+}</pre>
+
+<h3>What the harness proved — 12/12</h3>
+<table>
+<tr><th>#</th><th>Assertion</th><th>Result</th></tr>
+<tr><td>0</td><td><code>this.validateTimestamp(</code> appears <b>0</b> times</td><td>TTL is dead code → <b>unbounded</b> replay</td></tr>
+<tr><td>1</td><td>Envelope forged with the recovered APK keys</td><td><b>accepted</b>, decrypts to <code>{"cash":999999,"bonus":888888}</code></td></tr>
+<tr><td>2</td><td><code>HMAC("abc",123) === HMAC("abc1",23)</code></td><td>canonicalisation is ambiguous</td></tr>
+<tr><td>3</td><td>Plain JSON, no envelope</td><td><b>passes through with zero verification</b></td></tr>
+<tr><td>4</td><td>Identical envelope replayed 1 s later</td><td><b>accepted</b></td></tr>
+<tr><td>5a</td><td>Flipped byte + original signature</td><td>HMAC rejects ✓</td></tr>
+<tr><td>5b</td><td>Flipped byte + re-signed with the stolen key</td><td>GCM tag rejects ✓</td></tr>
+<tr><td>5c</td><td>—</td><td><b>the primitives are sound; the defect is key management</b></td></tr>
+<tr><td>6</td><td>Same forgery with <code>crypto.subtle</code> deleted</td><td>accepted via the CryptoJS fallback</td></tr>
+</table>
+
+<div class="note">
+<b>The TTL correction.</b> An earlier version of this analysis said the replay window was
+5 minutes, based on <code>timestampTtl: 300</code>. That was wrong:
+<code>validateTimestamp</code> is defined at <code>:95204</code> and never called —
+<code>decryptResponse</code> only calls <code>validateSignature</code> (<code>:95188</code>).
+The window is unbounded.
+</div>
+
+<h3>XXTEA recovery</h3>
+<pre>jsb_set_xxtea_key   exported @ 0x6e74ec
+  └─ PLT stub       0x313100   (GOT 0x1530ec8, rela.plt #1974)
+      └─ only caller  0x3330c0
+           0x3330a8  adrp x1, #0x112c000
+           0x3330b0  add  x1, x1, #0xb05      -> .rodata 0x112cb05
+           0x3330c0  bl   #0x313100
+.rodata @ 0x112cb05:  Cocos Game\0 b32a2160-0c63-41\0 jsb-adapter/jsb-builtin.js\0</pre>
+<p>Three deviations from textbook XXTEA, transcribed from the core at <code>0x70b834</code>:
+<code>y</code> is loaded once before the round loop and carried across rounds; the
+<code>p==0</code> step uses <code>z = v[n-1]</code>, not <code>v[0]</code>; and the length word
+must satisfy <code>n·4-7 ≤ len ≤ n·4-4</code>. Getting these right produced a
+<b>byte-exact</b> re-encryption of all 9 <code>.jsc</code> files.</p>
+<p>The key is a truncated UUID — 14 hex characters at fixed positions plus two literal dashes,
+so ~56 bits of entropy. Irrelevant in practice: it is a plaintext string in
+<code>.rodata</code>. The format is the real problem — XXTEA has <b>no authentication</b>, and
+the plaintext is gzip, whose first 10 bytes are a fixed header, handing an attacker a free
+known-plaintext block at a known offset.</p>
+
+<h3>Bundled crypto supply chain</h3>
+<table>
+<tr><th>Package</th><th>Version</th><th>Status</th></tr>
+<tr><td><code>elliptic</code></td><td><b>6.5.2</b></td><td>The exact version named by <b>CVE-2020-13822</b> (ECDSA signature malleability, fixed 6.5.3) and below <b>CVE-2020-28498</b> (secp256k1 <code>derive()</code> invalid-curve private-key leak, fixed 6.5.4). Also behind CVE-2024-42459/42460 (6.5.6) and CVE-2024-48948/48949 (6.5.8).</td></tr>
+<tr><td><code>crypto-js</code></td><td>4.2.0</td><td>current</td></tr>
+</table>
+<p style="color:var(--dim);font-size:13.3px">Provenance, verbatim from the embedded
+<code>package.json</code> at module 82:
+<code>_resolved: registry.npmjs.org/elliptic/-/elliptic-6.5.2.tgz</code>,
+<code>_shasum: 05c5678d…</code>,
+<code>_where: /Users/nantas/jenkins/workspace/Creator_2D/fireball/mac/fireball/dist/CocosCreator.app/…</code>.
+It is engine-bundled via <code>browserify-sign</code>/<code>create-ecdh</code>; no app module
+<code>require</code>s <code>"crypto"</code>, so it is <b>unreachable dead weight</b> — attack
+surface with no functionality. Strip it.</p>
+
+<h3>What correct looks like</h3>
+<ol style="font-size:13.6px;line-height:1.75">
+<li>Never ship a long-lived symmetric key — ECDH (X25519) at login, HKDF to a per-session key.</li>
+<li>Make the envelope mandatory, or drop the bespoke scheme for TLS with certificate pinning.</li>
+<li>Canonicalise before signing, and actually call <code>validateTimestamp</code>.</li>
+<li>Add a nonce plus a server-side replay cache.</li>
+<li>Sign requests too, with an idempotency key on every wallet mutation.</li>
+<li>Constant-time compare everywhere (<code>i === o</code> today is timing-observable).</li>
+<li>Remove the ungated response-body logging.</li>
+<li>Replace the delta cipher with EncryptedSharedPreferences / Android Keystore.</li>
+<li>Sign the hot-update manifest asymmetrically, over HTTPS.</li>
+</ol>
+</section>
+
+<!-- ================= WS ================= -->
+<section id="ws">
+<h2>WebSocket — no integrity at all</h2>
+
+<h3>The frame</h3>
+<pre>packPacket(e, t) = a( n(e,t), t )
+
+n(e,t) = jsToCByShort(len) + srcSum2(payload) + jsToCByInt(floor(curtime/1000))
+
+  [ len : 2 ][ cksum : 2 ][ ts : 4 ][ payload : N ]     all big-endian
+
+srcSum(e,t):  i = 65535
+              for n in 0..t:  i ^= e[n];  i = (i &amp; 1) ? (i&gt;&gt;1 ^ 28849) : (i&gt;&gt;1)</pre>
+
+<div class="flow">
+  <div class="step bad">
+    <div class="t">The checksum covers only the first 128 bytes <span class="loc">packPacket helper <code>o()</code></span></div>
+    <div class="d"><code>i = t &lt; 128 ? Global.srcSum(e, t) : Global.srcSum(e, 128)</code> —
+    for any payload ≥ 128 bytes, everything past byte 128 is unchecked.</div>
+  </div>
+  <div class="step bad">
+    <div class="t">The receive path discards the header without reading it <span class="loc">handleResponeData:51246</span></div>
+    <div class="d"><code>new Uint8Array(e.byteLength - 8)</code> copies from offset 8 and
+    ignores bytes 0–7 entirely. The length is never compared to the actual payload, the
+    <b>checksum is never verified</b>, and the timestamp is never checked.
+    <code>srcSum</code> is write-only.</div>
+  </div>
+  <div class="step bad">
+    <div class="t">No MAC, no encryption, no replay protection</div>
+    <div class="d"><code>_doHandleMsg(e) { this.handleMsg(JSON.parse(e)) }</code> — msgpack-wrapped
+    JSON, straight into dispatch. Auth is <code>e.uid = Global.playerData.uid</code>, a
+    client-supplied field.</div>
+  </div>
+</div>
+
+<h3>Transport selection is decided by whether the host contains a colon</h3>
+<pre>var n = "ws://", a = Global.isUserWSS(e);
+a &amp;&amp; (n = "wss://");
+Global.isAndroid() &amp;&amp; a
+  ? this._ws = new WebSocket(n + addr + "/ws", [], cc.url.raw("resources/common/cert.pem"))
+  : this._ws = new WebSocket(n + addr + "/ws");
+
+isUserWSS(e) { return -1 === parseUrl(e).indexOf(":") }</pre>
+<table>
+<tr><th>Host form</th><th>Scheme</th><th>Cert pinning</th></tr>
+<tr><td><code>lo.wfvbu98d.com</code></td><td><code>wss://</code></td><td>Android only</td></tr>
+<tr><td><code>host:port</code></td><td><span class="tag CRIT">ws:// plaintext</span></td><td>none</td></tr>
+<tr><td>anything, on iOS or web</td><td><code>wss://</code></td><td><span class="tag HIGH">none</span></td></tr>
+</table>
+<p>The pinned cert does ship
+(<code>assets/res/raw-assets/85/85de80f7-a503-4c2e-b58d-942d234bc251.pem</code>), but the pin is
+applied only on Android.</p>
+
+<h3>Login token</h3>
+<p><code>md5(timestamp + "hero888")</code> — a hardcoded 7-character salt, so valid login tokens
+can be minted offline.</p>
+</section>
+
+<!-- ================= FINDINGS ================= -->
+<section id="f">
+<h2>All findings</h2>
+<table id="ftab">
+<tr><th>#</th><th>Sev</th><th>Area</th><th>Finding</th><th>Evidence</th></tr>
+</table>
+<p style="color:var(--dim);font-size:13px;margin-top:18px">
+Static analysis of the decrypted bundle plus execution of the extracted modules in Node 22.
+No traffic was sent to any live server. Server-side behaviour — claim idempotency,
+<code>referid</code> authorisation, OTP attempt limits, and whether <code>payapi</code> is served
+over <code>http</code> — could not be tested from here and is flagged where relevant.
+</p>
+</section>
+
+</main>
+
+<footer>
+  Generated from <span class="mono">shareslots_YAZGC3JD46R.apk</span> ·
+  companion reports: <span class="mono">SECURITY_ANALYSIS.md</span>,
+  <span class="mono">DEEP_ANALYSIS_REFERRAL_ENCRYPTION.md</span> ·
+  proof harness: <span class="mono">harness/attack.js</span> (12/12),
+  <span class="mono">harness/otp_attack.js</span> (16/16)
+</footer>
+
+<script>
+const F=[
+["CRIT","Withdrawal","Payment PIN, SMS OTP, phone, uid and session token are all sent as GET query parameters on draw/order","withdraw_bank:96974 → charge_api.sendHttp:84278 → Http.sendReq:34672 · harness 16/16"],
+["CRIT","Encryption","Response-forgery: both static keys ship in the APK, so any wallet response can be forged and is accepted","response-decrypt.js · harness test 1"],
+["CRIT","Encryption","Encryption is opt-out — plain JSON with no envelope is accepted with zero verification","sendPayServer:80210 · harness test 3"],
+["CRIT","Referral","All 6 onClickClaim handlers in the app have no debounce or in-flight guard","Global.onClick:33139 · 6/6 audited"],
+["HIGH","Encryption","The 300 s replay TTL is dead code — validateTimestamp is never called, so the replay window is unbounded","project.js:95204 vs :95188 · harness test 0"],
+["HIGH","OTP","OTP send is an unauthenticated GET carrying only phone/channel/otptype — SMS bombing and toll fraud","_doSendOtp:61532"],
+["HIGH","OTP","Every HTTP response body is logged to console with no debug gate","Http.onReadyStateChanged:34695"],
+["HIGH","Referral","The sendAndCache response cache is never invalidated — stale balances replay after claiming","cacheList: 3 touch points only (:51028/:51515/:51535)"],
+["HIGH","Referral","Referral link is server-controlled and unvalidated; it feeds the QR code and every share","REFER_LINK_UPDATE · QRCode.data:88901"],
+["HIGH","Referral","Agent Telegram/WhatsApp contacts from the server go straight to openURL with no allow-list","yd_rank_referrals · refer_makemoney.onClickWhatsapp"],
+["HIGH","Referral","MsgId 1070 collides — a task-complete push wipes the referral bonus pool","project.js:79315 vs :79325"],
+["HIGH","Encryption","Signature canonicalisation is ambiguous — HMAC(data+ts) with no separator","harness test 2"],
+["HIGH","WebSocket","The receive path discards the 8-byte header without verifying the checksum, length or timestamp","handleResponeData:51246"],
+["HIGH","WebSocket","A host containing a colon falls back to plaintext ws://; cert pinning is Android-only","connect:51276"],
+["HIGH","Encryption","XXTEA key is a plaintext string in .rodata; re-encryption of all 9 .jsc is byte-exact","0x112cb05"],
+["HIGH","Auth","Login token is md5(timestamp + \"hero888\") — a hardcoded salt","project.js"],
+["HIGH","Encryption","Delta cipher protecting localStorage tokens uses no key at all — 0 bits","Global.compile:32558"],
+["MED","OTP","No client-side OTP attempt counter; spcode 334 is a wrong-OTP oracle","project.js:30831 · 5 call sites"],
+["MED","OTP","The only OTP-send rate limit is a 120 s UI timer","_doSendOtp:61548"],
+["MED","OTP","OTP-less login sends empty phone and password, resting entirely on a WhatsApp token","project.js:29468"],
+["MED","Referral","invit_uid is overwritten with a boolean, corrupting attribution for the converting cohort","project.js:30093 vs :29635"],
+["MED","Referral","Share rewards are self-asserted — the callback fires even when the share failed","FBMgr.shareResultCall:18301"],
+["MED","Referral","referid is a client-chosen user id — potential IDOR if the server does not scope it","refer_myreferrals_item"],
+["MED","Referral","_showRewads dereferences a null total/today → TypeError","refer_myrewards"],
+["MED","Referral","NaN pagination reaches the wire as {\"page\":null}","refer_myreferrals:121"],
+["MED","Referral","maskNameStr(n,3,3) reveals the whole name for ≤6 chars, next to the real uid","Global.maskNameStr"],
+["MED","Referral","9 dead referral MsgIds from an abandoned protocol, colliding with EVENT_FB_INVITE_*","MsgIdDef/MsgIdConfig"],
+["MED","Encryption","elliptic 6.5.2 bundled — CVE-2020-13822 names this exact version","module 82 package.json"],
+["MED","HTTP","encodeURI instead of encodeURIComponent leaves & = # live in query values","Http.sendReq:34672 · harness test 3"],
+["MED","Config","allowBackup, usesCleartextTraffic, requestLegacyExternalStorage all true","AndroidManifest.xml"],
+["INFO","Referral","onClickCopy reports success before copying, and copies the text not the link","refer_makemoney"],
+["INFO","Referral","PBPopupInvite's 3-invite cap is a localStorage check that fails open","PBPopupInvite._checkInviteCnt"],
+["INFO","Encryption","Both integrity layers verified working — HMAC and GCM tag each reject tampering","harness tests 5a/5b"],
+["INFO","Encryption","aes-gcm-decrypt's hand-rolled GHASH is correct, including a constant-time tag compare","aes-gcm-decrypt.js"],
+["HIGH","OTP","kyc/bind cat:mobile builds {mobile,passwd,code,name} but the client never checks code(OTP) is non-empty → phone bound with an empty OTP","submit:85374 · payload:85386"],
+["HIGH","OTP","kyc/bind cat:bank and cat:wallet send NO OTP at all when binding a bank/e-wallet","kyc/bind:85057 / :83281"],
+["HIGH","OTP","user/editCard (withdraw bank-verify, triggered by code 601) sends only {id,cardnum,ifsc} — no OTP, no password","onClickUpdateBankInfo:91135"],
+];
+const cnt=k=>F.filter(r=>r[0]===k).length;
+document.getElementById('nc').textContent=cnt('CRIT');
+document.getElementById('nh').textContent=cnt('HIGH');
+document.getElementById('nm').textContent=cnt('MED');
+document.getElementById('ni').textContent=cnt('INFO');
+const tb=document.getElementById('ftab');
+F.forEach((r,i)=>{
+  const tr=document.createElement('tr');
+  tr.innerHTML=`<td class="mono">${i+1}</td><td><span class="tag ${r[0]}">${r[0]}</span></td>
+    <td>${r[1]}</td><td>${r[2]}</td><td class="mono" style="color:var(--dim);font-size:12px">${r[3]}</td>`;
+  tb.appendChild(tr);
+});
+document.getElementById('nav').addEventListener('click',e=>{
+  const b=e.target.closest('button'); if(!b)return;
+  document.querySelectorAll('nav button').forEach(x=>x.classList.toggle('on',x===b));
+  document.querySelectorAll('main section').forEach(s=>s.classList.toggle('on',s.id===b.dataset.t));
+  window.scrollTo({top:0,behavior:'smooth'});
+});
+</script>
+</body>
+</html>
