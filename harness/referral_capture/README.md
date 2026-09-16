@@ -5,6 +5,36 @@ Goal: capture the app's referral / bank / withdraw traffic **without repacking t
 device with Frida** to bypass TLS pinning, and mitmproxy to record the traffic. Hot-update stays
 ON, so add-bank/events keep working, and nothing crashes.
 
+## Non-rooted phone (important)
+
+This app targets **SDK 35** and pins its `wss` certificate. The referral data itself rides the
+**WebSocket** (`refer_myreferrals`/`refer_myrewards`/`refer_makemoney`/`yd_rank_referrals` use WS
+messages, zero HTTP calls — verified in the decrypted `project.js`). So to read referral data you
+must decrypt `wss`, and on a **non-rooted** phone:
+
+- Android (targetSdk ≥ 24) does **not** trust a user-installed CA, so a mitmproxy CA added in
+  Settings is ignored for TLS.
+- The `wss` socket is also certificate-pinned.
+
+Result: **you cannot capture the referral `wss` traffic on a non-rooted stock phone** without
+repacking the app to trust your CA / drop the pin. The repack that does this (`ShareSlots_full_
+unsigned.apk`, OkHttp trust-all) crashed on your device, and I can't debug it without the device.
+
+What DOES work on non-rooted, no repack: the **cleartext `http`** pay-server calls (withdraw
+`draw/order`, `kyc/bind`, `user/banks` via `sendPayServer`) — just point the phone's Wi-Fi proxy at
+`mitmdump -s mitm_referral.py`. No CA needed (plaintext). But that is **not** the referral list /
+counts — those are on the `wss`.
+
+### Practical routes to capture the referral `wss`
+
+1. **Android emulator (recommended, free).** An AVD (Android Studio) or Genymotion is rootable /
+   has a writable system. Install the mitmproxy CA into the **system** store, run `frida-server`
+   or `objection … android sslpinning disable`, then `mitmdump -s mitm_referral.py`. No repack,
+   no crash, full referral capture.
+2. **Rooted device / second rooted phone.** Same as the emulator route.
+3. **Repack with trust-all.** Possible but it crashed for you. If you want this, send me
+   `adb logcat` from the crash and I'll fix the patch.
+
 ## Files
 
 | File | What it does |
