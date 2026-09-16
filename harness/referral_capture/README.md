@@ -99,3 +99,31 @@ The CSV pulls the fields that matter for referral counts: `referid`, `invit_uid`
 - OTP: the mobile-verify screen does have an OTP field; the earlier report over-stated
   "no OTP". The precise client weakness is that `kyc/bind cat:"mobile"` submit does not require
   the OTP to be non-empty — server-side enforcement is the real control.
+
+## Decoding an HttpCanary wss capture (`decode_hcy.py`)
+
+HttpCanary DOES capture the game `wss` (verified on a real export: `wss://ga4.wfvbu98d.com/ws`).
+Each WS frame is `[8-byte header][msgpack body]`. Decode any export with:
+
+```
+python3 decode_hcy.py path/to/cap        # folder of session subfolders (HttpCanary export)
+```
+
+It writes `decoded_frames.json`, prints your referral identity (from the `c=2` login response) and
+every referral frame. Referral command ids (from `MsgIdDef`):
+
+| c | name | what |
+|---|---|---|
+| 370 | REF_RULE_CFG | commission config (bet/recharge/invite ratios, tax) |
+| 371 | REF_MY_REWARDS | your referral rewards |
+| 373 | REF_MY_REFERRALS | **your referral list / counts** |
+| 374 | REF_MY_REFERRALS_DETAIL | per-referee detail |
+| 375 | REF_CLAIM_REWARD | claim |
+| 376 | REF_BOARDCAST | live broadcast of others' referral earnings |
+| 254 / 267 | REFER_INFO / REFER_BROADCAST_INFO | agent info / broadcast |
+
+To capture YOUR referral list/counts, open the **My Referrals / My Rewards** page while HttpCanary
+is running, then decode — you'll see `c=373` / `c=371` frames.
+
+> Correction: an earlier note said non-rooted HttpCanary could not read the `wss`. A real capture
+> proves it can. The `targetSdk 35` / pin caveat did not block it on the tested device.
