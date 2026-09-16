@@ -1,49 +1,49 @@
 /*
- * frida_full.js — ONE comprehensive runtime-capture script for ShareSlots (original APK).
+ * frida_full.js — ONE comprehensive runtime-capture script for the ORIGINAL ShareSlots APK.
+ * Rooted device, no repack. Hooks are matched to the app's actual (shaded) classes.
  *
- * Captures EVERYTHING at runtime and writes it to logcat AND to a file in the app's own
- * external-files dir (no root, no storage permission needed):
- *
- *   [RT][HTTP]   every HTTP request/response  (okhttp + HttpURLConnection)  -> pay API
- *   [RT][WS]     every WebSocket frame in/out (raw bytes; msgpack after an 8-byte header)
- *   [RT][CRYPTO] Cipher init/doFinal, SecretKeySpec (keys), IvParameterSpec (IV),
- *                Mac (HMAC), MessageDigest (md5/sha)  -> encryption + keys
- *   [RT][BIND]   kyc/bind + user/editCard payloads, flags an EMPTY otp `code`
- *
- * It also disables TLS certificate pinning so a mitmproxy/HttpCanary CA is accepted.
- *
- * Run (rooted device / emulator / frida-gadget repack):
  *   frida -U -f com.shareslots.games.fun -l frida_full.js
- * Pull the log file:
+ *
+ * Logs to logcat AND to /sdcard/Android/data/com.shareslots.games.fun/files/runtime.log
+ * (app-specific dir — no storage permission needed):
  *   adb pull /sdcard/Android/data/com.shareslots.games.fun/files/runtime.log
- * WS frames are msgpack — decode them with harness/referral_capture/decode_hcy.py logic.
+ *
+ * Captured (tag [RT][...]):
+ *   HTTP    every game API request+response (org.cocos2dx.lib.Cocos2dxHttpURLConnection)
+ *   WS      every WebSocket frame out/in (org.cocos2dx.okhttp3 RealWebSocket + listener)
+ *   CRYPTO  Cipher init/doFinal, SecretKeySpec(keys), IvParameterSpec(IV), Mac(HMAC), MessageDigest
+ *   BIND    kyc/bind + user/editCard payloads, flags an EMPTY otp `code`
+ * Also disables TLS pinning so a mitmproxy/HttpCanary CA is accepted.
+ *
+ * WS frames are [8-byte header][msgpack] — decode with harness/referral_capture/decode_hcy.py.
  */
 'use strict';
 
 var TAG = 'RT';
 var LOG_TO_FILE = true;
-var MAXBODY = 1 << 20; // 1 MB cap per body
 
 function now() { return new Date().toISOString(); }
 
 function hex(bytes) {
   if (!bytes) return '';
   var a = [];
-  for (var i = 0; i < bytes.length && i < 4096; i++) {
-    var h = (bytes[i] & 0xff).toString(16);
-    a.push(h.length < 2 ? '0' + h : h);
-  }
-  return a.join('');
+  var n = Math.min(bytes.length, 8192);
+  for (var i = 0; i < n; i++) { var h = (bytes[i] & 0xff).toString(16); a.push(h.length < 2 ? '0' + h : h); }
+  return a.join('') + (bytes.length > n ? '…(' + bytes.length + 'b)' : '');
 }
 
-var outFile = null;
+function u8(bytes) {
+  if (!bytes) return '';
+  try { return Java.use('java.lang.String').$new(bytes, 'UTF-8'); } catch (e) { return hex(bytes); }
+}
+
+var outFile;
 function ensureFile() {
-  if (outFile !== null) return outFile;
+  if (outFile !== undefined) return outFile;
   try {
-    var AT = Java.use('android.app.ActivityThread');
-    var ctx = AT.currentApplication().getApplicationContext();
+    var ctx = Java.use('android.app.ActivityThread').currentApplication().getApplicationContext();
     var dir = ctx.getExternalFilesDir(null);
-    if (dir) outFile = dir.getAbsolutePath() + '/runtime.log';
+    outFile = dir ? dir.getAbsolutePath() + '/runtime.log' : false;
   } catch (e) { outFile = false; }
   return outFile;
 }
@@ -55,48 +55,41 @@ function L(tag, msg) {
     var p = ensureFile();
     if (p) {
       try {
-        var F = Java.use('java.io.FileWriter');
-        var w = F.$new(p, true);
-        w.write(now() + ' ' + line + '\n');
-        w.flush(); w.close();
+        var w = Java.use('java.io.FileWriter').$new(p, true);
+        w.write(now() + ' ' + line + '\n'); w.flush(); w.close();
       } catch (e) {}
     }
   }
 }
 
-// read an okhttp RequestBody to a string (non-destructive)
-function readReqBody(body) {
-  if (!body) return '';
+function flagBind(where, body) {
   try {
-    var Buffer = Java.use('okio.Buffer');
-    var b = Buffer.$new();
-    body.writeTo(b);
-    return b.readUtf8();
-  } catch (e) { return '<binary ' + e + '>'; }
+    if (!body) return;
+    if (!/kyc\/bind|editCard|draw\/order|cat=mobile|cat=bank/i.test(body)) return;
+    var empty = /[?&]code=(&|$)/.test(body) || /"code"\s*:\s*""/.test(body) || /code=$/.test(body);
+    L('BIND', where + '  otp_code_EMPTY=' + empty + '  ' + body.slice(0, 1000));
+  } catch (e) {}
 }
 
 Java.perform(function () {
   L('INIT', 'ShareSlots full capture armed');
 
-  /* ===================== 1. TLS PINNING BYPASS ===================== */
+  /* ---------- 1. TLS pinning bypass ---------- */
   try {
     var X509 = Java.use('javax.net.ssl.X509TrustManager');
-    var TrustAll = Java.registerClass({
-      name: 'dev.rt.TrustAll', implements: [X509],
-      methods: { checkClientTrusted: function () {}, checkServerTrusted: function () {}, getAcceptedIssuers: function () { return []; } }
-    });
+    var TrustAll = Java.registerClass({ name: 'dev.rt.TrustAll', implements: [X509],
+      methods: { checkClientTrusted: function () {}, checkServerTrusted: function () {}, getAcceptedIssuers: function () { return []; } } });
     var HV = Java.use('javax.net.ssl.HostnameVerifier');
     var TrueHV = Java.registerClass({ name: 'dev.rt.TrueHV', implements: [HV], methods: { verify: function () { return true; } } });
-    var SSLContext = Java.use('javax.net.ssl.SSLContext');
-    var ctx = SSLContext.getInstance('TLS');
+    var ctx = Java.use('javax.net.ssl.SSLContext').getInstance('TLS');
     ctx.init(null, [TrustAll.$new()], null);
     var Https = Java.use('javax.net.ssl.HttpsURLConnection');
     Https.setDefaultSSLSocketFactory(ctx.getSocketFactory());
     Https.setDefaultHostnameVerifier(TrueHV.$new());
-    L('INIT', 'trust-all + accept-any-hostname installed');
+    L('INIT', 'trust-all installed');
   } catch (e) { L('INIT', 'trust-all skipped: ' + e); }
 
-  ['okhttp3.CertificatePinner', 'org.cocos2dx.okhttp3.CertificatePinner'].forEach(function (cls) {
+  ['org.cocos2dx.okhttp3.CertificatePinner', 'okhttp3.CertificatePinner'].forEach(function (cls) {
     try {
       var CP = Java.use(cls);
       CP.check.overload('java.lang.String', 'java.util.List').implementation = function () {};
@@ -104,132 +97,96 @@ Java.perform(function () {
       L('INIT', cls + ' bypassed');
     } catch (e) {}
   });
-  try {
-    var OHV = Java.use('org.cocos2dx.okhttp3.internal.tls.OkHostnameVerifier');
-    OHV.verify.overload('java.lang.String', 'java.security.cert.X509Certificate').implementation = function () { return true; };
-    OHV.verify.overload('java.lang.String', 'javax.net.ssl.SSLSession').implementation = function () { return true; };
-    L('INIT', 'OkHostnameVerifier bypassed');
-  } catch (e) {}
-
-  /* ===================== 2. HTTP — okhttp ===================== */
-  try {
-    var RealCall = Java.use('okhttp3.internal.connection.RealCall');
-    RealCall.getResponseWithInterceptorChain.implementation = function () {
-      var resp = this.getResponseWithInterceptorChain();
-      try {
-        var req = resp.request();
-        var url = req.url().toString();
-        var method = req.method();
-        var rb = readReqBody(req.body());
-        L('HTTP', 'REQ ' + method + ' ' + url + (rb ? '  body=' + rb : ''));
-        var pb = resp.peekBody(MAXBODY).string();
-        L('HTTP', 'RES ' + resp.code() + ' ' + url + '  ' + pb);
-        flagBind(url, rb, pb);
-      } catch (e) { L('HTTP', 'err ' + e); }
-      return resp;
-    };
-    L('INIT', 'okhttp RealCall hooked');
-  } catch (e) { L('INIT', 'okhttp hook skipped: ' + e); }
-
-  /* ===================== 3. HTTP — HttpURLConnection ===================== */
-  try {
-    var URL = Java.use('java.net.URL');
-    URL.openConnection.overload().implementation = function () {
-      var c = this.openConnection();
-      try { L('HTTP', 'OPEN ' + this.getProtocol().toUpperCase() + ' ' + this.toString()); } catch (e) {}
-      return c;
-    };
-    L('INIT', 'HttpURLConnection hooked');
-  } catch (e) {}
-
-  /* ===================== 4. WebSocket (wss) ===================== */
-  // okhttp RealWebSocket send + listener onMessage
-  try {
-    var RWS = Java.use('okhttp3.RealWebSocket');
-    RWS.send.overload('java.lang.String').implementation = function (s) { L('WS', 'SEND(str) ' + s); return this.send(s); };
-    RWS.send.overload('okio.ByteString').implementation = function (b) { L('WS', 'SEND(bin) ' + hex(b.toByteArray())); return this.send(b); };
-    L('INIT', 'okhttp RealWebSocket hooked');
-  } catch (e) {}
-  // generic WebSocketListener.onMessage (covers cocos + okhttp listeners)
-  ['okhttp3.WebSocketListener', 'org.cocos2dx.lib.WebSocket$SocketListener'].forEach(function (cls) {
+  ['org.cocos2dx.okhttp3.internal.tls.OkHostnameVerifier', 'okhttp3.internal.tls.OkHostnameVerifier'].forEach(function (cls) {
     try {
-      var WL = Java.use(cls);
-      WL.onMessage.overload('okhttp3.WebSocket', 'okio.ByteString').implementation = function (ws, b) {
-        L('WS', 'RECV(bin) ' + hex(b.toByteArray())); return this.onMessage(ws, b);
-      };
-      WL.onMessage.overload('okhttp3.WebSocket', 'java.lang.String').implementation = function (ws, s) {
-        L('WS', 'RECV(str) ' + s); return this.onMessage(ws, s);
-      };
-      L('INIT', cls + '.onMessage hooked');
+      var OHV = Java.use(cls);
+      OHV.verify.overload('java.lang.String', 'java.security.cert.X509Certificate').implementation = function () { return true; };
+      OHV.verify.overload('java.lang.String', 'javax.net.ssl.SSLSession').implementation = function () { return true; };
+      L('INIT', cls + ' bypassed');
     } catch (e) {}
   });
 
-  /* ===================== 5. CRYPTO — keys / IV / HMAC / digest ===================== */
+  /* ---------- 2. HTTP (game API via Cocos2dxHttpURLConnection) ---------- */
+  try {
+    var H = Java.use('org.cocos2dx.lib.Cocos2dxHttpURLConnection');
+    H.createHttpURLConnection.implementation = function (url) { L('HTTP', 'REQ ' + url); return this.createHttpURLConnection(url); };
+    H.setRequestMethod.implementation = function (c, m) { L('HTTP', 'METHOD ' + m); return this.setRequestMethod(c, m); };
+    H.sendRequest.implementation = function (c, body) {
+      var s = u8(body); L('HTTP', 'REQ-BODY ' + s); flagBind('http-req', s); return this.sendRequest(c, body);
+    };
+    H.getResponseCode.implementation = function (c) { var r = this.getResponseCode(c); L('HTTP', 'RES-CODE ' + r); return r; };
+    H.getResponseContent.implementation = function (c) {
+      var b = this.getResponseContent(c); var s = u8(b);
+      L('HTTP', 'RES ' + s.slice(0, 4000)); flagBind('http-res', s); return b;
+    };
+    L('INIT', 'Cocos2dxHttpURLConnection hooked');
+  } catch (e) { L('INIT', 'http hook skipped: ' + e); }
+
+  /* ---------- 3. WebSocket OUT (shaded okhttp RealWebSocket) ---------- */
+  try {
+    var RWS = Java.use('org.cocos2dx.okhttp3.internal.ws.RealWebSocket');
+    RWS.send.overload('java.lang.String').implementation = function (s) { L('WS', 'SEND(str) ' + s); return this.send(s); };
+    RWS.send.overload('org.cocos2dx.okio.ByteString').implementation = function (b) { L('WS', 'SEND(bin) ' + hex(b.toByteArray())); return this.send(b); };
+    L('INIT', 'RealWebSocket.send hooked');
+  } catch (e) { L('INIT', 'ws-send hook skipped: ' + e); }
+
+  /* ---------- 4. WebSocket IN (concrete WebSocketListener subclasses) ---------- */
+  function hookListeners() {
+    var WSL;
+    try { WSL = Java.use('org.cocos2dx.okhttp3.WebSocketListener'); } catch (e) { return; }
+    Java.enumerateLoadedClasses({
+      onMatch: function (name) {
+        try {
+          var C = Java.use(name);
+          if (!C.class || !WSL.class.isAssignableFrom(C.class)) return;
+          if (name === 'org.cocos2dx.okhttp3.WebSocketListener') return;
+          try { C.onMessage.overload('org.cocos2dx.okhttp3.WebSocket', 'org.cocos2dx.okio.ByteString').implementation =
+            function (ws, b) { L('WS', 'RECV(bin) ' + hex(b.toByteArray())); return this.onMessage(ws, b); }; } catch (e) {}
+          try { C.onMessage.overload('org.cocos2dx.okhttp3.WebSocket', 'java.lang.String').implementation =
+            function (ws, s) { L('WS', 'RECV(str) ' + s); return this.onMessage(ws, s); }; } catch (e) {}
+          L('INIT', 'WS listener hooked: ' + name);
+        } catch (e) {}
+      },
+      onComplete: function () {}
+    });
+  }
+  hookListeners();
+  setTimeout(hookListeners, 4000);   // catch listeners created after startup
+  setTimeout(hookListeners, 12000);
+
+  /* ---------- 5. CRYPTO (keys / IV / HMAC / digest) ---------- */
   try {
     var Cipher = Java.use('javax.crypto.Cipher');
     Cipher.init.overload('int', 'java.security.Key').implementation = function (m, k) {
-      L('CRYPTO', 'Cipher.init mode=' + m + ' alg=' + k.getAlgorithm() + ' key=' + hex(k.getEncoded()));
-      return this.init(m, k);
+      L('CRYPTO', 'Cipher.init mode=' + m + ' alg=' + k.getAlgorithm() + ' key=' + hex(k.getEncoded())); return this.init(m, k);
     };
     Cipher.init.overload('int', 'java.security.Key', 'java.security.spec.AlgorithmParameterSpec').implementation = function (m, k, s) {
-      L('CRYPTO', 'Cipher.init mode=' + m + ' alg=' + k.getAlgorithm() + ' key=' + hex(k.getEncoded()) + ' spec=' + s);
-      return this.init(m, k, s);
+      L('CRYPTO', 'Cipher.init mode=' + m + ' alg=' + k.getAlgorithm() + ' key=' + hex(k.getEncoded()) + ' spec=' + s); return this.init(m, k, s);
     };
-    Cipher.doFinal.overload('[B').implementation = function (inp) {
-      var out = this.doFinal(inp);
-      L('CRYPTO', 'Cipher.doFinal in=' + hex(inp) + ' out=' + hex(out));
-      return out;
-    };
+    Cipher.doFinal.overload('[B').implementation = function (i) { var o = this.doFinal(i); L('CRYPTO', 'Cipher.doFinal in=' + hex(i) + ' out=' + hex(o)); return o; };
     L('INIT', 'Cipher hooked');
-  } catch (e) { L('INIT', 'Cipher hook skipped: ' + e); }
+  } catch (e) { L('INIT', 'Cipher skipped: ' + e); }
 
   try {
     var SKS = Java.use('javax.crypto.spec.SecretKeySpec');
-    SKS.$init.overload('[B', 'java.lang.String').implementation = function (k, a) {
-      L('CRYPTO', 'SecretKeySpec alg=' + a + ' key=' + hex(k));
-      return this.$init(k, a);
-    };
+    SKS.$init.overload('[B', 'java.lang.String').implementation = function (k, a) { L('CRYPTO', 'SecretKeySpec alg=' + a + ' key=' + hex(k)); return this.$init(k, a); };
     var IVS = Java.use('javax.crypto.spec.IvParameterSpec');
-    IVS.$init.overload('[B').implementation = function (iv) {
-      L('CRYPTO', 'IvParameterSpec iv=' + hex(iv));
-      return this.$init(iv);
-    };
+    IVS.$init.overload('[B').implementation = function (iv) { L('CRYPTO', 'IvParameterSpec iv=' + hex(iv)); return this.$init(iv); };
     L('INIT', 'SecretKeySpec/IvParameterSpec hooked');
   } catch (e) {}
 
   try {
     var Mac = Java.use('javax.crypto.Mac');
-    Mac.init.overload('java.security.Key').implementation = function (k) {
-      L('CRYPTO', 'Mac.init alg=' + k.getAlgorithm() + ' key=' + hex(k.getEncoded()));
-      return this.init(k);
-    };
-    Mac.doFinal.overload('[B').implementation = function (inp) {
-      var out = this.doFinal(inp);
-      L('CRYPTO', 'Mac.doFinal in=' + hex(inp) + ' mac=' + hex(out));
-      return out;
-    };
-    L('INIT', 'Mac (HMAC) hooked');
+    Mac.init.overload('java.security.Key').implementation = function (k) { L('CRYPTO', 'Mac.init alg=' + k.getAlgorithm() + ' key=' + hex(k.getEncoded())); return this.init(k); };
+    Mac.doFinal.overload('[B').implementation = function (i) { var o = this.doFinal(i); L('CRYPTO', 'Mac.doFinal in=' + hex(i) + ' mac=' + hex(o)); return o; };
+    L('INIT', 'Mac hooked');
   } catch (e) {}
 
   try {
     var MD = Java.use('java.security.MessageDigest');
-    MD.digest.overload('[B').implementation = function (inp) {
-      var out = this.digest(inp);
-      L('CRYPTO', 'MessageDigest.' + this.getAlgorithm() + ' in=' + hex(inp) + ' out=' + hex(out));
-      return out;
-    };
+    MD.digest.overload('[B').implementation = function (i) { var o = this.digest(i); L('CRYPTO', 'MessageDigest.' + this.getAlgorithm() + ' in=' + hex(i) + ' out=' + hex(o)); return o; };
     L('INIT', 'MessageDigest hooked');
   } catch (e) {}
 
-  /* ============ 6. flag the no-OTP bank/phone bind ============ */
-  function flagBind(url, reqBody, resBody) {
-    try {
-      if (!/kyc\/bind|user\/editCard|draw\/order/i.test(url)) return;
-      var hasCode = /["&?]code=/.test(reqBody || '');
-      var emptyCode = /[?&]code=(&|$)/.test(reqBody || '') || /"code"\s*:\s*""/.test(reqBody || '');
-      L('BIND', url + '  otp_code_present=' + hasCode + '  otp_code_EMPTY=' + emptyCode + '  req=' + reqBody);
-    } catch (e) {}
-  }
-
-  L('INIT', 'ready — use the app; logs go to logcat and runtime.log');
+  L('INIT', 'ready — use the app; logs -> logcat + runtime.log');
 });
