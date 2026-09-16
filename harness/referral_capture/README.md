@@ -5,6 +5,28 @@ Goal: capture the app's referral / bank / withdraw traffic **without repacking t
 device with Frida** to bypass TLS pinning, and mitmproxy to record the traffic. Hot-update stays
 ON, so add-bank/events keep working, and nothing crashes.
 
+## Decoded backend hosts (from `GlobalVar`, `uncompile`-decoded)
+
+| Host | Scheme | What rides it | HttpCanary non-rooted? |
+|---|---|---|---|
+| `lo.wfvbu98d.com` | **`wss://…/ws`** (no port → `isUserWSS`=true → cert-pinned) | login + **all referral** (`refer_myreferrals`/`myrewards`/`makemoney`/`yd_rank_referrals` via `NetManager.sendAndCache`, MsgId) | **No** — TLS pin + targetSdk 35 ignores user CA |
+| `ifs.wfvbu98d.com` | **`http://`** (cleartext) | pay API: `draw/order`, `kyc/bind`, `user/banks`, `user/info`, `order/*` | **Yes** — plaintext, no CA needed |
+| `service.fewhu37a1.com` | `https://…/sms/dosend` | OTP send | No (TLS) |
+
+## HttpCanary (non-rooted)
+
+HttpCanary works without root, but the same TLS rule applies: this app targets SDK 35 and pins
+`wss`, so HttpCanary **cannot decrypt `wss://lo.wfvbu98d.com`** — and the referral list/counts are
+exactly on that socket. What HttpCanary CAN do on non-rooted:
+
+1. Capture the **cleartext `http://ifs.wfvbu98d.com`** API (withdraw, kyc/bind, banks, user info) —
+   no CA, no repack.
+2. To stop the app disconnecting, **exclude/bypass** `lo.wfvbu98d.com` and `service.fewhu37a1.com`
+   in HttpCanary so login (wss) and OTP (https) go direct, while `ifs.wfvbu98d.com` is captured.
+
+So with HttpCanary you get the http pay/bank traffic, **not** the referral counts. For referral
+`wss` you still need the emulator/root route below, or a working trust-all repack.
+
 ## Non-rooted phone (important)
 
 This app targets **SDK 35** and pins its `wss` certificate. The referral data itself rides the
