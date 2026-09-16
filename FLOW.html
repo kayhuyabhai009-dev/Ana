@@ -718,6 +718,9 @@ const F=[
 ["INFO","Referral","PBPopupInvite's 3-invite cap is a localStorage check that fails open","PBPopupInvite._checkInviteCnt"],
 ["INFO","Encryption","Both integrity layers verified working — HMAC and GCM tag each reject tampering","harness tests 5a/5b"],
 ["INFO","Encryption","aes-gcm-decrypt's hand-rolled GHASH is correct, including a constant-time tag compare","aes-gcm-decrypt.js"],
+["HIGH","OTP","kyc/bind cat:mobile builds {mobile,passwd,code,name} but the client never checks code(OTP) is non-empty → phone bound with an empty OTP","submit:85374 · payload:85386"],
+["HIGH","OTP","kyc/bind cat:bank and cat:wallet send NO OTP at all when binding a bank/e-wallet","kyc/bind:85057 / :83281"],
+["HIGH","OTP","user/editCard (withdraw bank-verify, triggered by code 601) sends only {id,cardnum,ifsc} — no OTP, no password","onClickUpdateBankInfo:91135"],
 ];
 const cnt=k=>F.filter(r=>r[0]===k).length;
 document.getElementById('nc').textContent=cnt('CRIT');

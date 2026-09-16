@@ -817,6 +817,59 @@ An entire older protocol (`REQ_REFFERS_*`) was abandoned in place and now collid
 
 ---
 
+# PART E — KYC / BANK BINDING BYPASSES OTP (NEW)
+
+The user observed on-device that on the withdrawal screen, "verify" → enter number + password +
+holder name → "submit details" succeeds **without any OTP**. Reading the client confirms why.
+
+| Endpoint | Line | Payload sent | OTP? |
+|---|---|---|---|
+| `kyc/bind` `cat:"mobile"` | submit `:85374`, payload `:85386` | `{mobile, passwd, code, name}` | field present but **never required non-empty** — client guards only number/password/name, not `code`. Server accepts empty → `isbindphone = 1` |
+| `kyc/bind` `cat:"bank"` | `:85057-85066` | `{account, ifsc, branch, pic, cnic, bank_code}` | **none** |
+| `kyc/bind` `cat:"wallet"` | `:83281-83289` | `{account, ifsc:"", branch, cnic}` | **none** |
+| `user/editCard` (withdraw verify) | `:91135`, triggered by `601` at `:96985` | `{id, cardnum, ifsc}` | **none**, and no password |
+
+The mobile path, verbatim (`:85374`):
+
+```js
+submit: function() {
+  var e = this.input_otp..., t = this.input_number..., i = this.input_password..., n = this.input_name...;
+  if ("" != t) { ... if (this._keyphone || "" != i) { ... if ("" != n) {
+      var a = { cat: "mobile", mobile: t, passwd: i, code: e, name: n };
+      this.sendHttp("kyc/bind", a, ...);      // <-- no check that e (OTP) is non-empty
+```
+
+**The inconsistency that matters:** OTP *is* enforced for login (`r.otp`, `:30694`) and for
+password reset, and withdrawal `draw/order` sends `code` when `_bNeedOTP` — but the flows that
+**bind the phone number and the bank account that money moves to** do not require it. So the
+weakest link is exactly the identity binding.
+
+**Why this hurts the referral check.** You verify referral numbers/counts against a bound phone.
+If a phone can be bound without OTP (`kyc/bind cat:"mobile"` with empty `code`), the "verified
+number" you rely on is not actually proof of possession of that number. Combined with
+`invit_uid = !0` (§A3.2) and client-chosen `referid` (§A4.1), referral attribution can be
+fabricated end-to-end on the client side.
+
+**Fix:** server-side, require a valid, unexpired OTP for every `kyc/bind` (all `cat`) and for
+`user/editCard`; never trust an empty `code`. Client-side, add the missing non-empty guard.
+
+---
+
+# PART F — CAPTURE WHILE KEEPING HOT-UPDATE
+
+Disabling hot-update (`openUpdate:!1`) removed server-driven features (add bank, events). The
+pinning can instead be neutralised **below** the script, so hot-update stays ON. The `wss` pin is
+enforced by bundled OkHttp: `CertificatePinner.check` and `OkHostnameVerifier.verify`
+(`classes.dex` offsets 1011044/1011076 and 1130732/1130780). `classes.dex.full` patches those
+(`check`→return-void, `verify`→true) **plus** the three cloner methods, and leaves
+`project.jsc` and `openUpdate` untouched. Result: cloner screen passed, hot-update still runs,
+and a MITM CA trusted via `network_security_config` is accepted on `wss` → capture works.
+
+Verified: the patched dex re-parses with androguard and each target disassembles to the intended
+constant. Not install-tested (no device here).
+
+---
+
 ## Summary of what changed vs. the first report
 
 | Claim | First report | Corrected |

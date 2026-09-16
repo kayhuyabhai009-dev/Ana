@@ -133,3 +133,52 @@ just be aware the in-app version string stays at the bundled build.
 - Not verified: installation on a real device / emulator (none here). This sandbox has no Java,
   apktool, apksigner or a reachable Debian mirror, so I could not build+sign a final APK myself.
   Signing must be done by your tool as above.
+
+---
+
+# Part 3 — capture WITHOUT disabling hot-update (`ShareSlots_full_unsigned.apk`)
+
+Part 2's `capturefix` set `openUpdate:!1`, which removed server-driven features (add bank,
+events). This APK instead neutralises the `wss` certificate pin **below the script**, so
+hot-update stays **ON**.
+
+`classes.dex.full` patches (in addition to the three cloner methods):
+
+| Method | dex insns offset | patch |
+|---|---|---|
+| `org.cocos2dx.okhttp3.CertificatePinner.check(String, Certificate[])` | 1011044 | `return-void` |
+| `org.cocos2dx.okhttp3.CertificatePinner.check(String, List)` | 1011076 | `return-void` |
+| `org.cocos2dx.okhttp3.internal.tls.OkHostnameVerifier.verify(String, X509Certificate)` | 1130732 | `const/4 v0,1; return v0` |
+| `org.cocos2dx.okhttp3.internal.tls.OkHostnameVerifier.verify(String, SSLSession)` | 1130780 | `const/4 v0,1; return v0` |
+
+`assets/src/project.jsc` and `openUpdate` are left **untouched**, so hot-update still runs.
+Install exactly like Part 2 (sign with `APKPatcher.jar`/apksigner, then `adb install -r`). Keep the
+MITM CA trusted via `network_security_config` (or Frida/objection). With the OkHttp pinner and
+hostname verifier neutralised, a MITM CA is accepted on `wss` → login succeeds → capture works,
+and add-bank/events still work.
+
+Verified: patched dex re-parses with androguard; each target disassembles to the intended
+constant. Not install-tested (no device in this sandbox).
+
+> Note: this trusts any CA you install — fine for a test device you control. It removes the TLS
+> pinning that otherwise stops an attacker's proxy, so do not ship it as a production build.
+
+---
+
+# Part 4 — OTP bypass on bank / phone binding (finding)
+
+On withdrawal "verify" → number + password + holder name → "submit details" verifies **without
+OTP**. Root cause (client):
+
+- `kyc/bind` `cat:"mobile"` (submit `:85374`): builds `{mobile, passwd, code, name}` but never
+  checks `code` (OTP) is non-empty → sends empty → server accepts → `isbindphone = 1`.
+- `kyc/bind` `cat:"bank"` (`:85057`) and `cat:"wallet"` (`:83281`): send **no** OTP at all.
+- `user/editCard` (withdraw verify, `:91135`, from code `601`): sends only `{id, cardnum, ifsc}` —
+  no OTP, no password.
+
+Meanwhile login and password reset **do** require OTP, and withdrawal `draw/order` sends `code`
+when `_bNeedOTP`. So money-out is OTP-gated but the phone/bank binding is not.
+
+**Fix:** require a valid OTP server-side on every `kyc/bind` and on `user/editCard`; add the
+client non-empty guard. Until then, a bound "verified" number is not proof of possession, which
+weakens any referral count keyed on verified numbers.
